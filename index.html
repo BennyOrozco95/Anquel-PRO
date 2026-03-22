@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Anaqueles Pro</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Anaqueles Pro">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+    /* ─── DESIGN TOKENS ─────────────────────────────────────── */
+    :root {
+      --ink:        #0f172a;
+      --ink-2:      #1e293b;
+      --ink-3:      #334155;
+      --muted:      #64748b;
+      --border:     #e2e8f0;
+      --surface:    #ffffff;
+      --bg:         #f1f5f9;
+      --blue:       #2563eb;
+      --blue-dk:    #1d4ed8;
+      --blue-pale:  #eff6ff;
+      --green:      #16a34a;
+      --green-pale: #f0fdf4;
+      --red:        #dc2626;
+      --red-pale:   #fef2f2;
+      --amber:      #d97706;
+      --amber-pale: #fffbeb;
+      --yellow:     #facc15;
+      --radius:     14px;
+      --radius-sm:  8px;
+      --shadow:     0 1px 3px rgba(0,0,0,.07), 0 4px 12px rgba(0,0,0,.05);
+      --shadow-lg:  0 4px 20px rgba(0,0,0,.12);
+      --font:       'DM Sans', system-ui, sans-serif;
+      --mono:       'DM Mono', monospace;
+      --safe-top:   env(safe-area-inset-top, 0px);
+      --safe-bot:   env(safe-area-inset-bottom, 0px);
+    }
+
+    /* ─── RESET ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%; overflow: hidden;
+      font-family: var(--font); font-size: 16px;
+      background: var(--bg); color: var(--ink);
+      -webkit-tap-highlight-color: transparent;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── SCREEN SYSTEM ──────────────────────────────────────── */
+    .screen {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .screen.off { display: none; }
+
+    /* ─── SHARED HEADER ──────────────────────────────────────── */
+    .appbar {
+      background: var(--ink);
+      color: #fff;
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 16px;
+      padding-top: var(--safe-top);
+      height: calc(60px + var(--safe-top));
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    .appbar h1 { font-size: 1.15rem; font-weight: 700; flex: 1; letter-spacing: -.02em; }
+    .icon-btn {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: none; background: rgba(255,255,255,.1); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 1.1rem; flex-shrink: 0;
+      transition: background .15s;
+    }
+    .icon-btn:active { background: rgba(255,255,255,.25); }
+
+    /* ─── SCROLLABLE CONTENT ─────────────────────────────────── */
+    .scroll-area {
+      flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      padding: 20px 16px calc(20px + var(--safe-bot));
+    }
+
+    /* ─── BUTTONS ────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      font-family: var(--font); font-size: .95rem; font-weight: 600;
+      padding: 14px 20px; border-radius: var(--radius-sm); border: none;
+      cursor: pointer; transition: transform .1s, filter .1s;
+      width: 100%; text-decoration: none; -webkit-user-select: none; user-select: none;
+    }
+    .btn:active { transform: scale(.97); filter: brightness(.95); }
+    .btn-blue   { background: var(--blue);  color: #fff; }
+    .btn-green  { background: var(--green); color: #fff; }
+    .btn-wa     { background: #25d366;      color: #fff; }
+    .btn-ghost  { background: transparent; color: var(--blue); border: 2px solid var(--blue); }
+    .btn-dark   { background: var(--ink);   color: #fff; }
+    .btn-sm     { padding: 10px 16px; font-size: .85rem; }
+    .btn-lg     { padding: 17px 20px; font-size: 1.05rem; border-radius: var(--radius); }
+    .row-btns   { display: flex; gap: 10px; }
+    .row-btns .btn { flex: 1; }
+
+    /* ─── CARDS ──────────────────────────────────────────────── */
+    .card {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 16px; margin-bottom: 12px;
+    }
+
+    /* ─── HOME SCREEN ────────────────────────────────────────── */
+    .progress-strip {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 18px;
+      margin-bottom: 20px; display: flex; align-items: center; gap: 14px;
+    }
+    .progress-ring { flex-shrink: 0; }
+    .progress-ring svg { display: block; }
+    .progress-ring-bg { fill: none; stroke: var(--border); stroke-width: 6; }
+    .progress-ring-fg { fill: none; stroke: var(--blue); stroke-width: 6;
+      stroke-linecap: round; transition: stroke-dashoffset .5s ease;
+      transform: rotate(-90deg); transform-origin: 50% 50%; }
+    .progress-ring-text { font-family: var(--mono); font-size: 12px;
+      fill: var(--ink); font-weight: 500; }
+
+    .section-label {
+      font-size: .72rem; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+    }
+
+    .shelf-card {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 18px 16px;
+      display: flex; align-items: center; gap: 14px;
+      cursor: pointer; margin-bottom: 10px;
+      border-left: 4px solid transparent;
+      transition: transform .1s, box-shadow .1s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .shelf-card:active { transform: scale(.985); box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+    .shelf-card.done { border-left-color: var(--green); }
+    .shelf-card.pending { border-left-color: var(--blue); }
+
+    .shelf-icon {
+      width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+      background: var(--blue-pale);
+    }
+    .shelf-card.done .shelf-icon { background: var(--green-pale); }
+
+    .shelf-info { flex: 1; min-width: 0; }
+    .shelf-name { font-weight: 700; font-size: 1rem; letter-spacing: -.01em; }
+    .shelf-sub  { font-size: .8rem; color: var(--muted); margin-top: 3px; }
+
+    .badge {
+      display: inline-flex; align-items: center;
+      font-size: .72rem; font-weight: 700; padding: 3px 8px;
+      border-radius: 20px; letter-spacing: .02em;
+    }
+    .badge-green { background: var(--green-pale); color: var(--green); }
+    .badge-blue  { background: var(--blue-pale);  color: var(--blue); }
+
+    .chevron { color: var(--border); font-size: 1.3rem; font-weight: 300; flex-shrink: 0; }
+
+    .empty-state {
+      text-align: center; padding: 60px 20px;
+    }
+    .empty-state .icon { font-size: 4rem; margin-bottom: 16px; }
+    .empty-state h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 8px; }
+    .empty-state p { color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
+
+    /* ─── IMPORT SCREEN ──────────────────────────────────────── */
+    .import-zone {
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      padding: 44px 20px; text-align: center; cursor: pointer;
+      transition: border-color .2s, background .2s; background: var(--surface);
+    }
+    .import-zone:active, .import-zone.over {
+      border-color: var(--blue); background: var(--blue-pale);
+    }
+    .import-zone .drop-icon { font-size: 3.5rem; margin-bottom: 14px; }
+    .import-zone h3 { font-weight: 700; margin-bottom: 6px; }
+    .import-zone p  { color: var(--muted); font-size: .88rem; }
+
+    .info-box {
+      border-radius: var(--radius-sm); padding: 14px;
+      font-size: .85rem; line-height: 1.6; margin-bottom: 16px;
+    }
+    .info-box.blue { background: var(--blue-pale); color: #1e40af; }
+    .info-box.green { background: var(--green-pale); color: #166534; }
+
+    .detected-item {
+      background: var(--surface); border-radius: var(--radius-sm);
+      box-shadow: var(--shadow); padding: 14px 16px;
+      display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+    }
+    .detected-item .di-icon { font-size: 1.2rem; }
+    .detected-item .di-name { font-weight: 600; flex: 1; }
+    .detected-item .di-count { font-size: .82rem; color: var(--muted); }
+
+    /* ─── COUNTING SCREEN ────────────────────────────────────── */
+    #screen-count {
+      background: #090e1a;
+      color: #fff;
+    }
+
+    .count-header {
+      padding: 14px 16px;
+      padding-top: max(14px, var(--safe-top));
+      display: flex; align-items: center; gap: 12px;
+      flex-shrink: 0;
+      background: rgba(255,255,255,.04);
+      border-bottom: 1px solid rgba(255,255,255,.07);
+    }
+    .count-back {
+      width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(255,255,255,.08); border: none; color: rgba(255,255,255,.7);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 1rem;
+      transition: background .15s;
+    }
+    .count-back:disabled { opacity: .25; }
+    .count-back:not(:disabled):active { background: rgba(255,255,255,.2); }
+
+    .pbar-wrap { flex: 1; height: 5px; background: rgba(255,255,255,.1); border-radius: 3px; overflow: hidden; }
+    .pbar-fill { height: 100%; background: var(--yellow); border-radius: 3px; transition: width .3s ease; }
+    .pbar-label { font-family: var(--mono); font-size: .8rem; color: rgba(255,255,255,.45); flex-shrink: 0; }
+
+    .count-stage {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 16px 20px; min-height: 0; gap: 0;
+    }
+
+    .prod-img-frame {
+      width: min(180px, 44vw); height: min(180px, 44vw);
+      border-radius: 18px; overflow: hidden; flex-shrink: 0;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.1);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .prod-img-frame img {
+      width: 100%; height: 100%; object-fit: contain;
+    }
+
+    .prod-name {
+      font-size: 1.15rem; font-weight: 700; text-align: center;
+      margin: 14px 10px 4px; letter-spacing: -.02em; line-height: 1.3;
+    }
+    .prod-req {
+      font-size: .8rem; color: rgba(255,255,255,.35);
+      margin-bottom: 14px; font-family: var(--mono);
+    }
+
+    .count-box {
+      font-family: var(--mono); font-size: 3.2rem; font-weight: 500;
+      letter-spacing: .04em; min-width: 130px; text-align: center;
+      padding: 10px 28px; border-radius: 12px;
+      background: rgba(255,255,255,.07);
+      border: 2px solid rgba(255,255,255,.12);
+      transition: border-color .15s, color .15s;
+      line-height: 1;
+    }
+    .count-box.active {
+      border-color: var(--yellow);
+      color: var(--yellow);
+    }
+    .count-box.zero { color: rgba(255,255,255,.2); }
+
+    /* ─── KEYPAD ─────────────────────────────────────────────── */
+    .keypad-area {
+      flex-shrink: 0; padding: 12px 16px;
+      padding-bottom: max(16px, var(--safe-bot));
+      background: rgba(255,255,255,.02);
+      border-top: 1px solid rgba(255,255,255,.06);
+    }
+    .keypad {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 9px; max-width: 320px; margin: 0 auto;
+    }
+    .key {
+      border: none; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-family: var(--font);
+      font-size: 1.55rem; font-weight: 500;
+      padding: 0; aspect-ratio: 1.7;
+      transition: transform .08s, opacity .08s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .key:active { transform: scale(.91); opacity: .8; }
+    .key-num { background: rgba(255,255,255,.09); color: #fff; }
+    .key-del { background: rgba(220,38,38,.2); color: #f87171; font-size: 1.2rem; }
+    .key-next {
+      grid-column: span 3; aspect-ratio: auto;
+      padding: 15px; font-size: 1rem; font-weight: 700; border-radius: 12px;
+      background: var(--blue); color: #fff; letter-spacing: .01em;
+    }
+    .key-next.last { background: var(--green); }
+
+    /* ─── RESULTS SCREEN ─────────────────────────────────────── */
+    .results-hero {
+      background: var(--ink); color: #fff;
+      padding: 28px 20px 24px;
+      padding-top: calc(var(--safe-top) + 28px);
+      text-align: center; flex-shrink: 0;
+    }
+    .results-hero .section-tag {
+      font-size: .8rem; font-weight: 600; letter-spacing: .07em;
+      text-transform: uppercase; color: rgba(255,255,255,.45); margin-bottom: 8px;
+    }
+    .results-hero .headline {
+      font-size: 1.5rem; font-weight: 800; letter-spacing: -.03em;
+    }
+    .results-hero .sub { font-size: .9rem; color: rgba(255,255,255,.5); margin-top: 6px; }
+    .missing-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(220,38,38,.25); color: #fca5a5;
+      padding: 6px 14px; border-radius: 20px;
+      font-size: .85rem; font-weight: 700; margin-top: 12px;
+    }
+    .ok-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(22,163,74,.25); color: #86efac;
+      padding: 6px 14px; border-radius: 20px;
+      font-size: .85rem; font-weight: 700; margin-top: 12px;
+    }
+
+    .missing-card {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); padding: 14px;
+      display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+    }
+    .missing-thumb {
+      width: 58px; height: 58px; border-radius: 10px; flex-shrink: 0;
+      object-fit: contain; background: var(--bg);
+    }
+    .missing-info { flex: 1; min-width: 0; }
+    .missing-name { font-weight: 700; font-size: .95rem; line-height: 1.3; }
+    .missing-detail { font-size: .78rem; color: var(--muted); margin-top: 3px; }
+    .missing-qty {
+      width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
+      background: var(--red); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 1.3rem; font-weight: 500;
+    }
+
+    .ok-state { text-align: center; padding: 48px 20px; }
+    .ok-state .ok-icon { font-size: 5rem; margin-bottom: 16px; }
+    .ok-state h2 { font-size: 1.4rem; font-weight: 800; letter-spacing: -.02em; margin-bottom: 8px; }
+    .ok-state p { color: var(--muted); }
+
+    /* ─── ACTION BAR ─────────────────────────────────────────── */
+    .action-bar {
+      flex-shrink: 0; padding: 14px 16px;
+      padding-bottom: max(14px, var(--safe-bot));
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 10px;
+    }
+
+    /* ─── TOAST ──────────────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 28px; left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: var(--ink-2); color: #fff;
+      padding: 11px 20px; border-radius: 8px;
+      font-size: .88rem; font-weight: 500;
+      opacity: 0; transition: opacity .25s, transform .25s;
+      z-index: 999; pointer-events: none; white-space: nowrap;
+    }
+    .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ─── LOADING ────────────────────────────────────────────── */
+    .loading-veil {
+      position: fixed; inset: 0; z-index: 998;
+      background: rgba(15,23,42,.6); backdrop-filter: blur(3px);
+      display: none; align-items: center; justify-content: center;
+    }
+    .loading-veil.on { display: flex; }
+    .loading-box {
+      background: var(--surface); border-radius: var(--radius);
+      padding: 32px 44px; text-align: center;
+      box-shadow: var(--shadow-lg);
+    }
+    .spin {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 3px solid var(--border); border-top-color: var(--blue);
+      animation: spin .75s linear infinite; margin: 0 auto 14px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-size: .92rem; color: var(--muted); }
+
+    /* ─── DIVIDER ────────────────────────────────────────────── */
+    hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+    h2.sec { font-size: .78rem; font-weight: 700; letter-spacing: .08em;
+              text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+
+    input[type="file"] { display: none; }
+
+    /* ─── ANIMATIONS ─────────────────────────────────────────── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-up { animation: fadeUp .35s ease both; }
+    .fade-up-2 { animation: fadeUp .35s .08s ease both; }
+    .fade-up-3 { animation: fadeUp .35s .16s ease both; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════
+     HOME SCREEN
+══════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-home">
+  <div class="appbar">
+    <span style="font-size:1.4rem">🛒</span>
+    <h1>Anaqueles Pro</h1>
+    <button class="icon-btn" title="Importar" onclick="nav('import')">📥</button>
+  </div>
+  <div class="scroll-area" id="home-body"><!-- rendered by JS --></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     IMPORT SCREEN
+══════════════════════════════════════════════════════ -->
+<div class="screen off" id="screen-import">
+  <div class="appbar">
+    <button class="icon-btn" onclick="nav('home')">←</button>
+    <h1>Importar catálogo</h1>
+  </div>
+  <div class="scroll-area">
+
+    <div class="info-box blue">
+      <strong>Formato esperado (Excel .xlsx):</strong><br>
+      Cada hoja = una sección del anaquel.<br>
+      · Columna A — Nombre del producto<br>
+      · Columna B — Cantidad requerida<br>
+      · Columna K — <code>=IMAGE("url")</code> con la foto<br>
+      La fila 1 se omite como encabezado.
+    </div>
+
+    <div class="import-zone" id="drop-zone" onclick="document.getElementById('file-pick').click()">
+      <div class="drop-icon">📂</div>
+      <h3>Seleccionar archivo Excel</h3>
+      <p>Toca aquí para elegir tu archivo .xlsx</p>
+    </div>
+    <input type="file" id="file-pick" accept=".xlsx,.xls" onchange="onFilePick(event)">
+
+    <div id="import-preview" style="display:none; margin-top:20px;">
+      <hr>
+      <h2 class="sec" id="preview-title">Secciones detectadas</h2>
+      <div id="detected-list"><!-- rendered by JS --></div>
+      <div class="row-btns" style="margin-top:14px;">
+        <button class="btn btn-ghost" onclick="cancelImport()">Cancelar</button>
+        <button class="btn btn-blue" onclick="confirmImport()">✓ Importar</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     COUNTING SCREEN
+══════════════════════════════════════════════════════ -->
+<div class="screen off" id="screen-count">
+
+  <div class="count-header">
+    <button class="count-back" id="cb-back" onclick="prevProduct()" disabled>←</button>
+    <div class="pbar-wrap">
+      <div class="pbar-fill" id="pbar" style="width:0%"></div>
+    </div>
+    <span class="pbar-label" id="pbar-label">0/0</span>
+  </div>
+
+  <div class="count-stage">
+    <div class="prod-img-frame">
+      <img id="ci-img" src="" alt=""
+           onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 80 80%22><rect width=%2280%22 height=%2280%22 fill=%22%23151d2e%22 rx=%228%22/><text x=%2240%22 y=%2248%22 text-anchor=%22middle%22 fill=%22%234a5568%22 font-size=%2232%22>📦</text></svg>'">
+    </div>
+    <div class="prod-name" id="ci-name">—</div>
+    <div class="prod-req" id="ci-req">Req: —</div>
+    <div class="count-box zero" id="ci-box">0</div>
+  </div>
+
+  <div class="keypad-area">
+    <div class="keypad">
+      <button class="key key-num" onclick="kp('1')">1</button>
+      <button class="key key-num" onclick="kp('2')">2</button>
+      <button class="key key-num" onclick="kp('3')">3</button>
+      <button class="key key-num" onclick="kp('4')">4</button>
+      <button class="key key-num" onclick="kp('5')">5</button>
+      <button class="key key-num" onclick="kp('6')">6</button>
+      <button class="key key-num" onclick="kp('7')">7</button>
+      <button class="key key-num" onclick="kp('8')">8</button>
+      <button class="key key-num" onclick="kp('9')">9</button>
+      <button class="key key-del" onclick="kp('⌫')">⌫</button>
+      <button class="key key-num" onclick="kp('0')">0</button>
+      <button class="key key-next" id="key-next" onclick="nextProduct()">Siguiente →</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     RESULTS SCREEN
+══════════════════════════════════════════════════════ -->
+<div class="screen off" id="screen-results">
+  <div class="results-hero" id="res-hero"><!-- rendered by JS --></div>
+  <div class="scroll-area" id="res-body"><!-- rendered by JS --></div>
+  <div class="action-bar" id="res-actions"><!-- rendered by JS --></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     SHARED OVERLAYS
+══════════════════════════════════════════════════════ -->
+<div class="toast" id="toast"></div>
+<div class="loading-veil" id="veil">
+  <div class="loading-box">
+    <div class="spin"></div>
+    <div class="loading-text" id="veil-msg">Procesando…</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     SCRIPTS
+══════════════════════════════════════════════════════ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   DATABASE  — IndexedDB wrapper
+═══════════════════════════════════════════════════════════ */
+let _db;
+
+async function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('anaqueles_pro_v1', 1);
+    r.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('sections'))
+        d.createObjectStore('sections', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('sessions'))
+        d.createObjectStore('sessions', { keyPath: 'id' });
+    };
+    r.onsuccess = e => { _db = e.target.result; res(_db); };
+    r.onerror = rej;
+  });
+}
+function dbTx(store, mode) {
+  return _db.transaction(store, mode).objectStore(store);
+}
+async function dbAll(store) {
+  return new Promise((res, rej) => {
+    const r = dbTx(store, 'readonly').getAll();
+    r.onsuccess = () => res(r.result);
+    r.onerror = rej;
+  });
+}
+async function dbPut(store, item) {
+  return new Promise((res, rej) => {
+    const r = dbTx(store, 'readwrite').put(item);
+    r.onsuccess = () => res(r.result);
+    r.onerror = rej;
+  });
+}
+async function dbDel(store, id) {
+  return new Promise((res, rej) => {
+    const r = dbTx(store, 'readwrite').delete(id);
+    r.onsuccess = res; r.onerror = rej;
+  });
+}
+async function dbClear(store) {
+  return new Promise((res, rej) => {
+    const r = dbTx(store, 'readwrite').clear();
+    r.onsuccess = res; r.onerror = rej;
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   APP STATE
+═══════════════════════════════════════════════════════════ */
+const S = {
+  sections:     [],   // {id, name, products:[{id,name,required,imageUrl}], importedAt}
+  sessions:     [],   // {id, sectionId, sectionName, date, completedAt, counts:[...]}
+
+  // counting
+  activeSection: null,
+  products:      [],
+  idx:           0,
+  entered:       '',
+  counts:        [],   // sparse array indexed by product idx
+
+  // import
+  pending: [],
+
+  // results
+  missing: []
+};
+
+/* ═══════════════════════════════════════════════════════════
+   NAVIGATION
+═══════════════════════════════════════════════════════════ */
+function nav(screen) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('off'));
+  document.getElementById('screen-' + screen).classList.remove('off');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HOME SCREEN
+═══════════════════════════════════════════════════════════ */
+function renderHome() {
+  nav('home');
+  const today = todayStr();
+  const doneSectionIds = new Set(
+    S.sessions.filter(s => s.date === today).map(s => s.sectionId)
+  );
+  const el = document.getElementById('home-body');
+
+  if (S.sections.length === 0) {
+    el.innerHTML = `
+      <div class="empty-state fade-up">
+        <div class="icon">📦</div>
+        <h2>Sin catálogo</h2>
+        <p>Importa tu archivo Excel para comenzar a registrar el inventario de tus anaqueles.</p>
+        <button class="btn btn-blue btn-lg" onclick="nav('import')">📥 Importar catálogo</button>
+      </div>`;
+    return;
+  }
+
+  const done = doneSectionIds.size;
+  const total = S.sections.length;
+  const pct = total ? (done / total) * 100 : 0;
+  const r = 24, circ = 2 * Math.PI * r;
+  const offset = circ * (1 - pct / 100);
+
+  let html = `
+    <div class="progress-strip fade-up">
+      <div class="progress-ring">
+        <svg width="68" height="68" viewBox="0 0 68 68">
+          <circle class="progress-ring-bg" cx="34" cy="34" r="${r}"/>
+          <circle class="progress-ring-fg" cx="34" cy="34" r="${r}"
+            stroke-dasharray="${circ.toFixed(1)}"
+            stroke-dashoffset="${offset.toFixed(1)}"/>
+          <text class="progress-ring-text" x="34" y="39" text-anchor="middle">${done}/${total}</text>
+        </svg>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:1rem">Progreso de hoy</div>
+        <div style="color:var(--muted);font-size:.85rem;margin-top:3px">
+          ${done === total ? '¡Todas las secciones contadas! 🎉' : `${total - done} sección(es) pendiente(s)`}
+        </div>
+      </div>
+    </div>
+
+    <h2 class="sec fade-up-2">Secciones del anaquel</h2>
+  `;
+
+  S.sections.forEach((sec, i) => {
+    const isDone = doneSectionIds.has(sec.id);
+    html += `
+      <div class="shelf-card ${isDone ? 'done' : 'pending'} fade-up-${Math.min(i+2,3)}"
+           onclick="startCount('${sec.id}')">
+        <div class="shelf-icon">${isDone ? '✅' : '🧮'}</div>
+        <div class="shelf-info">
+          <div class="shelf-name">${esc(sec.name)}</div>
+          <div class="shelf-sub">
+            ${sec.products.length} productos
+            ${isDone ? `&nbsp;<span class="badge badge-green">✓ Contado hoy</span>` : ''}
+          </div>
+        </div>
+        <div class="chevron">›</div>
+      </div>`;
+  });
+
+  html += `
+    <hr>
+    <button class="btn btn-ghost" onclick="nav('import')" style="margin-top:4px">
+      📥 Re-importar catálogo
+    </button>`;
+
+  el.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   IMPORT
+═══════════════════════════════════════════════════════════ */
+function cancelImport() {
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('file-pick').value = '';
+  S.pending = [];
+  nav('home');
+}
+
+function onFilePick(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  ev.target.value = ''; // allow re-selection of same file
+
+  showVeil('Leyendo archivo…');
+  const reader = new FileReader();
+
+  reader.onload = e => {
+    hideVeil();
+    try {
+      S.pending = parseXLSX(e.target.result);
+      if (!S.pending.length) {
+        toast('⚠️ No se encontraron secciones válidas en el archivo', 4000);
+        return;
+      }
+      showPreview(S.pending);
+    } catch (err) {
+      toast('Error: ' + err.message, 4000);
+    }
+  };
+  reader.onerror = () => { hideVeil(); toast('No se pudo leer el archivo', 3000); };
+  reader.readAsArrayBuffer(file);
+}
+
+/** Sheets to skip — utility sheets, not product sections */
+const SKIP_SHEETS = new Set(['Menu', 'Hoja 12', 'Hoja 13', 'Hoja 14', 'Hoja 15']);
+
+function parseXLSX(ab) {
+  const wb = XLSX.read(ab, { type: 'array', cellFormula: true });
+  const sections = [];
+
+  for (const sheetName of wb.SheetNames) {
+    if (SKIP_SHEETS.has(sheetName)) continue;
+
+    const ws  = wb.Sheets[sheetName];
+    const ref = ws['!ref'];
+    if (!ref) continue;
+
+    const range = XLSX.utils.decode_range(ref);
+    const products = [];
+
+    // Rows start at 1 (0-indexed) to skip header
+    for (let r = 1; r <= range.e.r; r++) {
+      // Column A = 0 : name
+      const nameCell = ws[XLSX.utils.encode_cell({ r, c: 0 })];
+      const name = nameCell ? String(nameCell.v || '').trim() : '';
+      if (!name) continue;
+
+      // Column B = 1 : required qty
+      const reqCell = ws[XLSX.utils.encode_cell({ r, c: 1 })];
+      const required = reqCell ? (Number(reqCell.v) || 0) : 0;
+
+      // Column K = 10 : image formula  =IMAGE("url")
+      const imgCell = ws[XLSX.utils.encode_cell({ r, c: 10 })];
+      let imageUrl = '';
+      if (imgCell) {
+        const src = imgCell.f || imgCell.v || imgCell.w || '';
+        const m = String(src).match(/IMAGE\("([^"]+)"\)/i);
+        if (m) imageUrl = m[1];
+        else if (String(src).startsWith('http')) imageUrl = String(src);
+      }
+
+      products.push({
+        id: `${sheetName}_r${r}`,
+        name,
+        required,
+        imageUrl
+      });
+    }
+
+    if (products.length) {
+      sections.push({
+        id: `sec_${sheetName.replace(/\W+/g, '_')}_${Date.now()}`,
+        name: sheetName,
+        products,
+        importedAt: Date.now()
+      });
+    }
+  }
+  return sections;
+}
+
+function showPreview(sections) {
+  document.getElementById('preview-title').textContent =
+    `${sections.length} sección(es) detectadas`;
+
+  document.getElementById('detected-list').innerHTML = sections.map(sec => `
+    <div class="detected-item">
+      <span class="di-icon">📋</span>
+      <span class="di-name">${esc(sec.name)}</span>
+      <span class="di-count">${sec.products.length} productos</span>
+    </div>
+  `).join('');
+
+  document.getElementById('import-preview').style.display = 'block';
+}
+
+async function confirmImport() {
+  showVeil('Guardando catálogo…');
+  try {
+    await dbClear('sections');
+    for (const sec of S.pending) await dbPut('sections', sec);
+    S.sections = S.pending;
+    S.pending = [];
+
+    document.getElementById('import-preview').style.display = 'none';
+    hideVeil();
+    toast(`✓ ${S.sections.length} secciones importadas`, 3000);
+    renderHome();
+  } catch (err) {
+    hideVeil();
+    toast('Error al guardar: ' + err.message, 4000);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   COUNTING
+═══════════════════════════════════════════════════════════ */
+function startCount(sectionId) {
+  const sec = S.sections.find(s => s.id === sectionId);
+  if (!sec || !sec.products.length) { toast('Sección sin productos', 2000); return; }
+
+  S.activeSection = sec;
+  S.products = [...sec.products];
+  S.idx = 0;
+  S.entered = '';
+  S.counts = [];
+
+  nav('count');
+  renderProduct();
+}
+
+function renderProduct() {
+  const p = S.products[S.idx];
+  const n = S.products.length;
+
+  // Progress
+  const pct = (S.idx / n) * 100;
+  document.getElementById('pbar').style.width = pct + '%';
+  document.getElementById('pbar-label').textContent = `${S.idx + 1}/${n}`;
+  document.getElementById('cb-back').disabled = S.idx === 0;
+
+  // Product
+  document.getElementById('ci-img').src = p.imageUrl || '';
+  document.getElementById('ci-name').textContent = p.name;
+  document.getElementById('ci-req').textContent = `Requeridos: ${p.required}`;
+
+  // Restore saved count for this product if navigating back
+  const saved = S.counts[S.idx];
+  S.entered = saved !== undefined ? (saved === 0 ? '' : String(saved)) : '';
+  updateBox();
+
+  // Next / Finish label
+  const btn = document.getElementById('key-next');
+  const isLast = S.idx === n - 1;
+  btn.textContent = isLast ? '✓ Finalizar' : 'Siguiente →';
+  btn.className = 'key key-next' + (isLast ? ' last' : '');
+}
+
+function kp(digit) {
+  if (digit === '⌫') {
+    S.entered = S.entered.slice(0, -1);
+  } else {
+    if (S.entered.length >= 3) return; // cap at 999
+    S.entered += digit;
+  }
+  updateBox();
+}
+
+function updateBox() {
+  const el = document.getElementById('ci-box');
+  if (S.entered === '') {
+    el.textContent = '0'; el.className = 'count-box zero';
+  } else {
+    el.textContent = S.entered; el.className = 'count-box active';
+  }
+}
+
+function saveCurrentCount() {
+  S.counts[S.idx] = S.entered === '' ? 0 : parseInt(S.entered, 10);
+}
+
+function prevProduct() {
+  if (S.idx === 0) return;
+  saveCurrentCount();
+  S.idx--;
+  renderProduct();
+}
+
+function nextProduct() {
+  saveCurrentCount();
+  if (S.idx < S.products.length - 1) {
+    S.idx++;
+    renderProduct();
+  } else {
+    finishCount();
+  }
+}
+
+async function finishCount() {
+  const session = buildSession();
+  S.missing = session.counts.filter(c => c.missing > 0);
+
+  try {
+    await dbPut('sessions', session);
+    S.sessions.push(session);
+    // Keep only last 100 sessions
+    if (S.sessions.length > 100) {
+      const old = S.sessions.shift();
+      await dbDel('sessions', old.id);
+    }
+  } catch (e) { console.warn('Session save failed', e); }
+
+  renderResults();
+}
+
+function buildSession() {
+  const counts = S.products.map((p, i) => {
+    const counted = S.counts[i] ?? 0;
+    const missing = Math.max(0, p.required - counted);
+    return { productId: p.id, name: p.name, imageUrl: p.imageUrl,
+             required: p.required, counted, missing };
+  });
+  return {
+    id: `sess_${Date.now()}`,
+    sectionId: S.activeSection.id,
+    sectionName: S.activeSection.name,
+    date: todayStr(),
+    completedAt: Date.now(),
+    counts
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RESULTS
+═══════════════════════════════════════════════════════════ */
+function renderResults() {
+  nav('results');
+  const m = S.missing;
+  const sec = S.activeSection;
+  const dateStr = new Date().toLocaleDateString('es-MX',
+    { day: 'numeric', month: 'long', year: 'numeric' });
+
+  // Hero
+  document.getElementById('res-hero').innerHTML = `
+    <div class="section-tag">${esc(sec.name)}</div>
+    <div class="headline">${m.length ? `${m.length} productos faltantes` : 'Todo en orden'}</div>
+    <div class="sub">${dateStr}</div>
+    ${m.length
+      ? `<div><span class="missing-pill">⚠️ Productos a surtir</span></div>`
+      : `<div><span class="ok-pill">✅ Anaquel completo</span></div>`}
+  `;
+
+  // Body
+  const body = document.getElementById('res-body');
+  if (m.length === 0) {
+    body.innerHTML = `
+      <div class="ok-state">
+        <div class="ok-icon">🎉</div>
+        <h2>¡Perfecto!</h2>
+        <p>Todos los productos están en las cantidades requeridas.</p>
+      </div>`;
+  } else {
+    body.innerHTML = m.map(p => `
+      <div class="missing-card">
+        <img class="missing-thumb" src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
+             onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
+        <div class="missing-info">
+          <div class="missing-name">${esc(p.name)}</div>
+          <div class="missing-detail">Hay: ${p.counted} &nbsp;·&nbsp; Req: ${p.required}</div>
+        </div>
+        <div class="missing-qty">${p.missing}</div>
+      </div>`).join('');
+  }
+
+  // Actions
+  const actions = document.getElementById('res-actions');
+  if (m.length) {
+    actions.innerHTML = `
+      <div class="row-btns">
+        <button class="btn btn-blue" onclick="makePDF()">📄 PDF</button>
+        <button class="btn btn-wa"   onclick="sendWA()">💬 WhatsApp</button>
+      </div>
+      <button class="btn btn-ghost" onclick="renderHome()">← Volver al inicio</button>`;
+  } else {
+    actions.innerHTML = `
+      <button class="btn btn-blue btn-lg" onclick="renderHome()">← Volver al inicio</button>`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PDF  — HTML blob opened for printing
+═══════════════════════════════════════════════════════════ */
+function makePDF() {
+  const m = S.missing;
+  const sec = S.activeSection;
+  const date = new Date().toLocaleDateString('es-MX',
+    { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const rows = m.map((p, i) => `
+    <tr>
+      <td class="n">${i + 1}</td>
+      <td>${p.name}</td>
+      <td class="c">${p.counted} / ${p.required}</td>
+      <td class="miss">${p.missing}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+  <style>
+    body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#1e293b}
+    .hdr{background:#1e293b;color:#fff;padding:18px 20px;border-radius:8px;margin-bottom:20px}
+    .hdr h1{margin:0;font-size:16px}.hdr p{margin:4px 0 0;opacity:.65;font-size:12px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    thead{background:#f1f5f9}
+    th,td{padding:9px 10px;border-bottom:1px solid #e2e8f0;text-align:left}
+    td.n{color:#94a3b8;width:32px}
+    td.c{color:#64748b;font-size:12px;width:80px}
+    td.miss{font-weight:700;font-size:15px;color:#dc2626;width:50px}
+    tr:nth-child(even){background:#f8fafc}
+    @media print{body{padding:10px}}
+  </style></head><body>
+  <div class="hdr">
+    <h1>📋 Productos Faltantes — ${esc(sec.name)}</h1>
+    <p>${date} &nbsp;·&nbsp; ${m.length} producto(s)</p>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>Producto</th><th>Hay / Req</th><th>Surtir</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <script>window.onload=()=>window.print()<\/script>
+  </body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, '_blank');
+  if (!win) {
+    // Fallback: download HTML file
+    const a = Object.assign(document.createElement('a'),
+      { href: url, download: `faltantes_${sec.name}_${date.replace(/\//g,'-')}.html` });
+    a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 8000);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   WHATSAPP
+═══════════════════════════════════════════════════════════ */
+function sendWA() {
+  const m = S.missing;
+  const sec = S.activeSection;
+  const date = new Date().toLocaleDateString('es-MX',
+    { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  let txt = `📋 *Productos Faltantes*\n`;
+  txt += `🏪 *${sec.name}*  ·  📅 ${date}\n`;
+  txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+  m.forEach((p, i) => {
+    txt += `${i + 1}. ${p.name} — *${p.missing} pz.*\n`;
+  });
+  txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+  txt += `_Total: ${m.length} productos para surtir_`;
+
+  window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   UTILITIES
+═══════════════════════════════════════════════════════════ */
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let _toastTimer;
+function toast(msg, ms = 2500) {
+  clearTimeout(_toastTimer);
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('on');
+  _toastTimer = setTimeout(() => el.classList.remove('on'), ms);
+}
+
+function showVeil(msg = 'Procesando…') {
+  document.getElementById('veil-msg').textContent = msg;
+  document.getElementById('veil').classList.add('on');
+}
+function hideVeil() {
+  document.getElementById('veil').classList.remove('on');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BOOTSTRAP
+═══════════════════════════════════════════════════════════ */
+async function boot() {
+  try {
+    await openDB();
+    S.sections = await dbAll('sections');
+    S.sessions  = await dbAll('sessions');
+  } catch (e) {
+    console.warn('DB init failed:', e);
+  }
+  renderHome();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
