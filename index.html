@@ -128,32 +128,50 @@
 
     .section-label {
       font-size: .72rem; font-weight: 600; letter-spacing: .08em;
-      text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
     }
 
-    .shelf-card {
+    /* ─── SECTIONS GRID ──────────────────────────────────────── */
+    .sections-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .shelf-tile {
       background: var(--surface); border-radius: var(--radius);
-      box-shadow: var(--shadow); padding: 18px 16px;
-      display: flex; align-items: center; gap: 14px;
-      cursor: pointer; margin-bottom: 10px;
-      border-left: 4px solid transparent;
-      transition: transform .1s, box-shadow .1s;
+      box-shadow: var(--shadow); padding: 18px 14px 16px;
+      display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+      cursor: pointer; position: relative; overflow: hidden;
+      border-top: 3px solid transparent;
+      transition: transform .12s, box-shadow .12s;
       -webkit-user-select: none; user-select: none;
+      min-height: 110px;
     }
-    .shelf-card:active { transform: scale(.985); box-shadow: 0 1px 4px rgba(0,0,0,.07); }
-    .shelf-card.done { border-left-color: var(--green); }
-    .shelf-card.pending { border-left-color: var(--blue); }
+    .shelf-tile:active { transform: scale(.96); box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+    .shelf-tile.done  { border-top-color: var(--green); }
+    .shelf-tile.pending { border-top-color: var(--blue); }
 
-    .shelf-icon {
-      width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+    .shelf-tile-icon {
+      width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
       background: var(--blue-pale);
     }
-    .shelf-card.done .shelf-icon { background: var(--green-pale); }
+    .shelf-tile.done .shelf-tile-icon { background: var(--green-pale); }
 
-    .shelf-info { flex: 1; min-width: 0; }
-    .shelf-name { font-weight: 700; font-size: 1rem; letter-spacing: -.01em; }
-    .shelf-sub  { font-size: .8rem; color: var(--muted); margin-top: 3px; }
+    .shelf-tile-name {
+      font-weight: 700; font-size: .95rem; letter-spacing: -.01em;
+      line-height: 1.25; word-break: break-word;
+    }
+    .shelf-tile-sub { font-size: .75rem; color: var(--muted); margin-top: auto; }
+
+    .shelf-tile-check {
+      position: absolute; top: 10px; right: 10px;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: var(--green); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .7rem; font-weight: 700;
+    }
 
     .badge {
       display: inline-flex; align-items: center;
@@ -163,7 +181,20 @@
     .badge-green { background: var(--green-pale); color: var(--green); }
     .badge-blue  { background: var(--blue-pale);  color: var(--blue); }
 
-    .chevron { color: var(--border); font-size: 1.3rem; font-weight: 300; flex-shrink: 0; }
+    /* ─── RESET PROGRESS BUTTON ──────────────────────────────── */
+    .reset-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .btn-reset {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: var(--font); font-size: .8rem; font-weight: 600;
+      padding: 7px 13px; border-radius: 20px; border: none;
+      background: var(--red-pale); color: var(--red);
+      cursor: pointer; transition: background .15s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .btn-reset:active { background: #fecaca; }
 
     .empty-state {
       text-align: center; padding: 60px 20px;
@@ -435,12 +466,14 @@
   <div class="scroll-area">
 
     <div class="info-box blue">
-      <strong>Formato esperado (Excel .xlsx):</strong><br>
-      Cada hoja = una sección del anaquel.<br>
-      · Columna A — Nombre del producto<br>
-      · Columna B — Cantidad requerida<br>
-      · Columna K — <code>=IMAGE("url")</code> con la foto<br>
-      La fila 1 se omite como encabezado.
+      <strong>Formato del Excel (.xlsx):</strong><br>
+      Cada hoja = una sección del anaquel. Fila 1 = encabezado (se omite).<br><br>
+      · <strong>Col A</strong> — Nombre del producto<br>
+      · <strong>Col B</strong> — Cantidad requerida<br>
+      · <strong>Col C</strong> — Cuántos hay (conteo manual, se ignora)<br>
+      · <strong>Col D</strong> — Rellenar (fórmula, se ignora)<br>
+      · <strong>Col E</strong> — <code>=IMAGE("url")</code> con la foto<br>
+      · <strong>Col F</strong> — Activo: <code>Yes</code> muestra el producto, <code>No</code> lo oculta
     </div>
 
     <div class="import-zone" id="drop-zone" onclick="document.getElementById('file-pick').click()">
@@ -474,6 +507,7 @@
       <div class="pbar-fill" id="pbar" style="width:0%"></div>
     </div>
     <span class="pbar-label" id="pbar-label">0/0</span>
+    <button class="count-back" onclick="exitToHome()" title="Salir al inicio" style="margin-left:4px;font-size:.85rem">✕</button>
   </div>
 
   <div class="count-stage">
@@ -631,9 +665,9 @@ function renderHome() {
     return;
   }
 
-  const done = doneSectionIds.size;
+  const done  = doneSectionIds.size;
   const total = S.sections.length;
-  const pct = total ? (done / total) * 100 : 0;
+  const pct   = total ? (done / total) * 100 : 0;
   const r = 24, circ = 2 * Math.PI * r;
   const offset = circ * (1 - pct / 100);
 
@@ -648,7 +682,7 @@ function renderHome() {
           <text class="progress-ring-text" x="34" y="39" text-anchor="middle">${done}/${total}</text>
         </svg>
       </div>
-      <div>
+      <div style="flex:1">
         <div style="font-weight:700;font-size:1rem">Progreso de hoy</div>
         <div style="color:var(--muted);font-size:.85rem;margin-top:3px">
           ${done === total ? '¡Todas las secciones contadas! 🎉' : `${total - done} sección(es) pendiente(s)`}
@@ -656,31 +690,29 @@ function renderHome() {
       </div>
     </div>
 
-    <h2 class="sec fade-up-2">Secciones del anaquel</h2>
+    <div class="reset-row fade-up-2">
+      <h2 class="sec" style="margin-bottom:0">Secciones del anaquel</h2>
+      <button class="btn-reset" onclick="confirmResetProgress()">↺ Reiniciar día</button>
+    </div>
+
+    <div class="sections-grid fade-up-2">
   `;
 
-  S.sections.forEach((sec, i) => {
+  S.sections.forEach(sec => {
     const isDone = doneSectionIds.has(sec.id);
     html += `
-      <div class="shelf-card ${isDone ? 'done' : 'pending'} fade-up-${Math.min(i+2,3)}"
-           onclick="startCount('${sec.id}')">
-        <div class="shelf-icon">${isDone ? '✅' : '🧮'}</div>
-        <div class="shelf-info">
-          <div class="shelf-name">${esc(sec.name)}</div>
-          <div class="shelf-sub">
-            ${sec.products.length} productos
-            ${isDone ? `&nbsp;<span class="badge badge-green">✓ Contado hoy</span>` : ''}
-          </div>
-        </div>
-        <div class="chevron">›</div>
+      <div class="shelf-tile ${isDone ? 'done' : 'pending'}" onclick="startCount('${sec.id}')">
+        ${isDone ? `<div class="shelf-tile-check">✓</div>` : ''}
+        <div class="shelf-tile-icon">${isDone ? '✅' : '🧮'}</div>
+        <div class="shelf-tile-name">${esc(sec.name)}</div>
+        <div class="shelf-tile-sub">${sec.products.length} productos</div>
       </div>`;
   });
 
-  html += `
-    <hr>
-    <button class="btn btn-ghost" onclick="nav('import')" style="margin-top:4px">
-      📥 Re-importar catálogo
-    </button>`;
+  html += `</div>
+    <div style="margin-top:18px">
+      <button class="btn btn-ghost" onclick="nav('import')">📥 Re-importar catálogo</button>
+    </div>`;
 
   el.innerHTML = html;
 }
@@ -739,17 +771,17 @@ function parseXLSX(ab) {
 
     // Rows start at 1 (0-indexed) to skip header
     for (let r = 1; r <= range.e.r; r++) {
-      // Column A = 0 : name
+      // Col A (0): name
       const nameCell = ws[XLSX.utils.encode_cell({ r, c: 0 })];
       const name = nameCell ? String(nameCell.v || '').trim() : '';
       if (!name) continue;
 
-      // Column B = 1 : required qty
+      // Col B (1): required qty
       const reqCell = ws[XLSX.utils.encode_cell({ r, c: 1 })];
       const required = reqCell ? (Number(reqCell.v) || 0) : 0;
 
-      // Column K = 10 : image formula  =IMAGE("url")
-      const imgCell = ws[XLSX.utils.encode_cell({ r, c: 10 })];
+      // Col E (4): image formula =IMAGE("url")
+      const imgCell = ws[XLSX.utils.encode_cell({ r, c: 4 })];
       let imageUrl = '';
       if (imgCell) {
         const src = imgCell.f || imgCell.v || imgCell.w || '';
@@ -757,6 +789,21 @@ function parseXLSX(ab) {
         if (m) imageUrl = m[1];
         else if (String(src).startsWith('http')) imageUrl = String(src);
       }
+      // Fallback: check old column K (10) if col E is empty
+      if (!imageUrl) {
+        const imgCellK = ws[XLSX.utils.encode_cell({ r, c: 10 })];
+        if (imgCellK) {
+          const src = imgCellK.f || imgCellK.v || imgCellK.w || '';
+          const m = String(src).match(/IMAGE\("([^"]+)"\)/i);
+          if (m) imageUrl = m[1];
+          else if (String(src).startsWith('http')) imageUrl = String(src);
+        }
+      }
+
+      // Col F (5): active flag — "Yes" to show, "No" to hide. Default = show.
+      const activeCell = ws[XLSX.utils.encode_cell({ r, c: 5 })];
+      const activeVal = activeCell ? String(activeCell.v || '').trim().toLowerCase() : 'yes';
+      if (activeVal === 'no') continue; // skip inactive products
 
       products.push({
         id: `${sheetName}_r${r}`,
@@ -910,6 +957,28 @@ async function finishCount() {
   } catch (e) { console.warn('Session save failed', e); }
 
   renderResults();
+}
+
+function exitToHome() {
+  if (S.idx > 0) {
+    if (!confirm('¿Salir del conteo? El progreso de esta sección se perderá.')) return;
+  }
+  renderHome();
+}
+
+async function confirmResetProgress() {
+  const today = todayStr();
+  const count = S.sessions.filter(s => s.date === today).length;
+  if (count === 0) { toast('No hay progreso de hoy que reiniciar', 2000); return; }
+  if (!confirm(`¿Reiniciar el progreso de hoy? Se borrarán ${count} conteo(s) registrados hoy.`)) return;
+
+  // Remove today's sessions from DB and memory
+  const toDelete = S.sessions.filter(s => s.date === today);
+  for (const s of toDelete) await dbDel('sessions', s.id);
+  S.sessions = S.sessions.filter(s => s.date !== today);
+
+  toast('✓ Progreso de hoy reiniciado', 2000);
+  renderHome();
 }
 
 function buildSession() {
