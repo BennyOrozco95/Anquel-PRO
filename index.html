@@ -431,6 +431,71 @@
 
     input[type="file"] { display: none; }
 
+    /* ─── SYNC CARD (home) ───────────────────────────────────── */
+    .sync-card {
+      background: var(--ink); color: #fff;
+      border-radius: var(--radius); padding: 18px;
+      margin-bottom: 20px; display: flex; align-items: center; gap: 14px;
+    }
+    .sync-card-icon {
+      width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
+      background: rgba(255,255,255,.1);
+      display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+    }
+    .sync-card-info { flex: 1; min-width: 0; }
+    .sync-card-title { font-weight: 700; font-size: .95rem; }
+    .sync-card-sub   { font-size: .78rem; color: rgba(255,255,255,.5); margin-top: 3px; }
+    .btn-sync {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: var(--font); font-size: .85rem; font-weight: 700;
+      padding: 10px 16px; border-radius: 8px; border: none;
+      background: var(--blue); color: #fff;
+      cursor: pointer; flex-shrink: 0; white-space: nowrap;
+      transition: filter .15s;
+    }
+    .btn-sync:active { filter: brightness(.88); }
+    .btn-sync:disabled { opacity: .45; pointer-events: none; }
+    .btn-sync.spinning .sync-icon { display: inline-block; animation: spin .7s linear infinite; }
+
+    /* ─── SETTINGS SCREEN ────────────────────────────────────── */
+    .settings-group {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); overflow: hidden; margin-bottom: 16px;
+    }
+    .settings-group-title {
+      font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted);
+      padding: 14px 16px 8px; background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-row {
+      padding: 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: flex-start; flex-direction: column; gap: 8px;
+    }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-row label {
+      font-weight: 600; font-size: .9rem; display: block;
+    }
+    .settings-row .hint {
+      font-size: .8rem; color: var(--muted); line-height: 1.5;
+    }
+    .url-input {
+      width: 100%; padding: 12px 14px; border-radius: var(--radius-sm);
+      border: 2px solid var(--border); font-family: var(--mono);
+      font-size: .78rem; color: var(--ink); background: var(--bg);
+      outline: none; transition: border-color .2s; line-height: 1.4;
+      word-break: break-all;
+    }
+    .url-input:focus { border-color: var(--blue); background: var(--surface); }
+    .url-input::placeholder { color: var(--muted); font-family: var(--font); font-size: .82rem; }
+    .status-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 20px; font-size: .75rem; font-weight: 600;
+    }
+    .status-chip.ok     { background: var(--green-pale); color: var(--green); }
+    .status-chip.error  { background: var(--red-pale);   color: var(--red); }
+    .status-chip.none   { background: var(--bg);         color: var(--muted); border: 1px solid var(--border); }
+
     /* ─── ANIMATIONS ─────────────────────────────────────────── */
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(10px); }
@@ -450,46 +515,80 @@
   <div class="appbar">
     <span style="font-size:1.4rem">🛒</span>
     <h1>Anaqueles Pro</h1>
-    <button class="icon-btn" title="Importar" onclick="nav('import')">📥</button>
+    <button class="icon-btn" title="Configuración" onclick="nav('settings')">⚙️</button>
   </div>
   <div class="scroll-area" id="home-body"><!-- rendered by JS --></div>
 </div>
 
 <!-- ══════════════════════════════════════════════════
-     IMPORT SCREEN
+     SETTINGS SCREEN
 ══════════════════════════════════════════════════════ -->
-<div class="screen off" id="screen-import">
+<div class="screen off" id="screen-settings">
   <div class="appbar">
     <button class="icon-btn" onclick="nav('home')">←</button>
-    <h1>Importar catálogo</h1>
+    <h1>Configuración</h1>
   </div>
   <div class="scroll-area">
 
-    <div class="info-box blue">
-      <strong>Formato del Excel (.xlsx):</strong><br>
-      Cada hoja = una sección del anaquel. Fila 1 = encabezado (se omite).<br><br>
-      · <strong>Col A</strong> — Nombre del producto<br>
-      · <strong>Col B</strong> — Cantidad requerida<br>
-      · <strong>Col C</strong> — Cuántos hay (conteo manual, se ignora)<br>
-      · <strong>Col D</strong> — Rellenar (fórmula, se ignora)<br>
-      · <strong>Col E</strong> — <code>=IMAGE("url")</code> con la foto<br>
-      · <strong>Col F</strong> — Activo: <code>Yes</code> muestra el producto, <code>No</code> lo oculta
+    <!-- ── Apps Script Sync ─────────────────────────────────── -->
+    <div class="settings-group">
+      <div class="settings-group-title">Sincronización con Google Sheets</div>
+
+      <div class="settings-row">
+        <label>URL del Web App (Apps Script)</label>
+        <div class="hint">
+          Despliega el archivo <strong>SyncEndpoint.gs</strong> como Web App en tu proyecto
+          de Apps Script y pega aquí la URL que te genera.
+        </div>
+        <textarea class="url-input" id="webapp-url-input" rows="3"
+          placeholder="https://script.google.com/macros/s/…/exec"
+          oninput="onUrlInput()"
+        ></textarea>
+        <div id="url-status" class="status-chip none">Sin configurar</div>
+        <div class="row-btns" style="margin-top:4px">
+          <button class="btn btn-ghost btn-sm" id="btn-test-url" onclick="testConnection()" disabled>
+            🔌 Probar conexión
+          </button>
+          <button class="btn btn-blue btn-sm" id="btn-save-url" onclick="saveWebAppUrl()" disabled>
+            💾 Guardar URL
+          </button>
+        </div>
+      </div>
     </div>
 
-    <div class="import-zone" id="drop-zone" onclick="document.getElementById('file-pick').click()">
-      <div class="drop-icon">📂</div>
-      <h3>Seleccionar archivo Excel</h3>
-      <p>Toca aquí para elegir tu archivo .xlsx</p>
-    </div>
-    <input type="file" id="file-pick" accept=".xlsx,.xls" onchange="onFilePick(event)">
+    <!-- ── Import xlsx fallback ─────────────────────────────── -->
+    <div class="settings-group">
+      <div class="settings-group-title">Importar desde archivo Excel</div>
+      <div class="settings-row">
+        <label>Cargar .xlsx manualmente</label>
+        <div class="hint">
+          Usa esta opción si prefieres exportar el archivo desde tu computadora
+          y cargarlo directo. Formato: Col A=Nombre, B=Requeridos, E=Imagen, F=Activo.
+        </div>
+        <button class="btn btn-ghost" onclick="document.getElementById('file-pick').click()">
+          📂 Seleccionar archivo .xlsx
+        </button>
+        <input type="file" id="file-pick" accept=".xlsx,.xls" onchange="onFilePick(event)">
 
-    <div id="import-preview" style="display:none; margin-top:20px;">
-      <hr>
-      <h2 class="sec" id="preview-title">Secciones detectadas</h2>
-      <div id="detected-list"><!-- rendered by JS --></div>
-      <div class="row-btns" style="margin-top:14px;">
-        <button class="btn btn-ghost" onclick="cancelImport()">Cancelar</button>
-        <button class="btn btn-blue" onclick="confirmImport()">✓ Importar</button>
+        <div id="import-preview" style="display:none; width:100%; margin-top:8px">
+          <h2 class="sec" id="preview-title">Secciones detectadas</h2>
+          <div id="detected-list"></div>
+          <div class="row-btns" style="margin-top:10px">
+            <button class="btn btn-ghost btn-sm" onclick="cancelImport()">Cancelar</button>
+            <button class="btn btn-blue btn-sm" onclick="confirmImport()">✓ Importar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Danger zone ──────────────────────────────────────── -->
+    <div class="settings-group">
+      <div class="settings-group-title">Zona de peligro</div>
+      <div class="settings-row">
+        <label>Borrar catálogo completo</label>
+        <div class="hint">Elimina todas las secciones y productos. Los conteos de sesiones no se borran.</div>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)"
+                onclick="deleteCatalog()">🗑️ Borrar catálogo</button>
       </div>
     </div>
 
@@ -572,13 +671,15 @@ let _db;
 
 async function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('anaqueles_pro_v1', 1);
+    const r = indexedDB.open('anaqueles_pro_v1', 2);
     r.onupgradeneeded = e => {
       const d = e.target.result;
       if (!d.objectStoreNames.contains('sections'))
         d.createObjectStore('sections', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('sessions'))
         d.createObjectStore('sessions', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('config'))
+        d.createObjectStore('config', { keyPath: 'key' });
     };
     r.onsuccess = e => { _db = e.target.result; res(_db); };
     r.onerror = rej;
@@ -620,6 +721,7 @@ async function dbClear(store) {
 const S = {
   sections:     [],   // {id, name, products:[{id,name,required,imageUrl}], importedAt}
   sessions:     [],   // {id, sectionId, sectionName, date, completedAt, counts:[...]}
+  config:       { webAppUrl: '', lastSynced: null },
 
   // counting
   activeSection: null,
@@ -636,12 +738,8 @@ const S = {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   NAVIGATION
+   NAVIGATION — defined inside settings section below
 ═══════════════════════════════════════════════════════════ */
-function nav(screen) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.add('off'));
-  document.getElementById('screen-' + screen).classList.remove('off');
-}
 
 /* ═══════════════════════════════════════════════════════════
    HOME SCREEN
@@ -654,13 +752,38 @@ function renderHome() {
   );
   const el = document.getElementById('home-body');
 
+  // ── Sync card ──────────────────────────────────────────────
+  const hasUrl      = !!S.config.webAppUrl;
+  const lastSyncStr = S.config.lastSynced
+    ? new Date(S.config.lastSynced).toLocaleString('es-MX', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+      })
+    : 'Nunca sincronizado';
+
+  let syncCard = `
+    <div class="sync-card fade-up">
+      <div class="sync-card-icon">☁️</div>
+      <div class="sync-card-info">
+        <div class="sync-card-title">Sincronizar catálogo</div>
+        <div class="sync-card-sub" id="last-sync-label">
+          ${hasUrl ? lastSyncStr : 'Configura la URL en ⚙️'}
+        </div>
+      </div>
+      <button class="btn-sync" id="btn-sync-home"
+              onclick="syncFromSheets()" ${hasUrl ? '' : 'disabled'}>
+        <span class="sync-icon">⟳</span> Sync
+      </button>
+    </div>`;
+
   if (S.sections.length === 0) {
-    el.innerHTML = `
-      <div class="empty-state fade-up">
+    el.innerHTML = syncCard + `
+      <div class="empty-state fade-up-2">
         <div class="icon">📦</div>
         <h2>Sin catálogo</h2>
-        <p>Importa tu archivo Excel para comenzar a registrar el inventario de tus anaqueles.</p>
-        <button class="btn btn-blue btn-lg" onclick="nav('import')">📥 Importar catálogo</button>
+        <p>${hasUrl
+          ? 'Toca <strong>Sync</strong> para descargar tu catálogo desde Google Sheets.'
+          : 'Configura la URL del Web App en ⚙️ para sincronizar, o importa un Excel.'}</p>
+        <button class="btn btn-ghost btn-lg" onclick="nav('settings')">⚙️ Configuración</button>
       </div>`;
     return;
   }
@@ -671,8 +794,8 @@ function renderHome() {
   const r = 24, circ = 2 * Math.PI * r;
   const offset = circ * (1 - pct / 100);
 
-  let html = `
-    <div class="progress-strip fade-up">
+  let html = syncCard + `
+    <div class="progress-strip fade-up-2">
       <div class="progress-ring">
         <svg width="68" height="68" viewBox="0 0 68 68">
           <circle class="progress-ring-bg" cx="34" cy="34" r="${r}"/>
@@ -711,7 +834,7 @@ function renderHome() {
 
   html += `</div>
     <div style="margin-top:18px">
-      <button class="btn btn-ghost" onclick="nav('import')">📥 Re-importar catálogo</button>
+      <button class="btn btn-ghost" onclick="nav('settings')">⚙️ Configuración e importar</button>
     </div>`;
 
   el.innerHTML = html;
@@ -724,7 +847,122 @@ function cancelImport() {
   document.getElementById('import-preview').style.display = 'none';
   document.getElementById('file-pick').value = '';
   S.pending = [];
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GOOGLE SHEETS SYNC
+═══════════════════════════════════════════════════════════ */
+
+/** Called by the Sync button on the home screen */
+async function syncFromSheets() {
+  if (!S.config.webAppUrl) { toast('⚙️ Configura la URL primero', 2500); return; }
+
+  const btn = document.getElementById('btn-sync-home');
+  if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
+  showVeil('Sincronizando con Google Sheets…');
+
+  try {
+    const sections = await fetchSectionsFromSheets(S.config.webAppUrl);
+
+    await dbClear('sections');
+    for (const sec of sections) await dbPut('sections', sec);
+    S.sections = sections;
+
+    S.config.lastSynced = Date.now();
+    await dbPut('config', { key: 'webAppUrl',   value: S.config.webAppUrl });
+    await dbPut('config', { key: 'lastSynced',  value: S.config.lastSynced });
+
+    hideVeil();
+    toast(`✓ ${sections.length} secciones sincronizadas`, 3000);
+    renderHome();
+  } catch (err) {
+    hideVeil();
+    toast('❌ Error: ' + err.message, 4000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
+  }
+}
+
+/** Fetch + parse JSON from the Apps Script Web App URL */
+async function fetchSectionsFromSheets(url) {
+  const resp = await fetch(url, { redirect: 'follow' });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const data = await resp.json();
+  if (!data.ok) throw new Error(data.error || 'Respuesta inválida del servidor');
+  if (!Array.isArray(data.sections)) throw new Error('El endpoint no devolvió secciones');
+  // Stamp importedAt
+  return data.sections.map(s => ({ ...s, importedAt: Date.now() }));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SETTINGS SCREEN
+═══════════════════════════════════════════════════════════ */
+
+function onUrlInput() {
+  const val = document.getElementById('webapp-url-input').value.trim();
+  const valid = val.startsWith('https://script.google.com/macros/');
+  document.getElementById('btn-test-url').disabled = !val;
+  document.getElementById('btn-save-url').disabled = !val;
+  setUrlStatus(val ? (valid ? 'none' : 'error') : 'none',
+               val ? (valid ? 'URL detectada' : 'URL no parece válida') : 'Sin configurar');
+}
+
+function setUrlStatus(type, msg) {
+  const el = document.getElementById('url-status');
+  el.className = `status-chip ${type}`;
+  el.textContent = msg;
+}
+
+async function saveWebAppUrl() {
+  const url = document.getElementById('webapp-url-input').value.trim();
+  if (!url) return;
+  S.config.webAppUrl = url;
+  await dbPut('config', { key: 'webAppUrl', value: url });
+  setUrlStatus('ok', '✓ URL guardada');
+  toast('✓ URL guardada', 2000);
+}
+
+async function testConnection() {
+  const url = document.getElementById('webapp-url-input').value.trim();
+  if (!url) return;
+  setUrlStatus('none', '⟳ Probando…');
+  document.getElementById('btn-test-url').disabled = true;
+  try {
+    const sections = await fetchSectionsFromSheets(url);
+    setUrlStatus('ok', `✓ ${sections.length} secciones encontradas`);
+  } catch (err) {
+    setUrlStatus('error', '❌ ' + err.message);
+  } finally {
+    document.getElementById('btn-test-url').disabled = false;
+  }
+}
+
+/** Populate settings screen fields when navigating to it */
+function nav(screen) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('off'));
+  document.getElementById('screen-' + screen).classList.remove('off');
+  if (screen === 'settings') populateSettings();
+}
+
+function populateSettings() {
+  const input = document.getElementById('webapp-url-input');
+  if (input && S.config.webAppUrl) {
+    input.value = S.config.webAppUrl;
+    setUrlStatus('ok', S.config.lastSynced
+      ? `✓ Última sync: ${new Date(S.config.lastSynced).toLocaleString('es-MX', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}`
+      : '✓ URL guardada');
+    document.getElementById('btn-test-url').disabled = false;
+    document.getElementById('btn-save-url').disabled = false;
+  }
+}
+
+async function deleteCatalog() {
+  if (!confirm('¿Borrar todo el catálogo? Las sesiones de conteo no se afectan.')) return;
+  await dbClear('sections');
+  S.sections = [];
+  toast('Catálogo borrado', 2000);
   nav('home');
+  renderHome();
 }
 
 function onFilePick(ev) {
@@ -851,6 +1089,7 @@ async function confirmImport() {
     document.getElementById('import-preview').style.display = 'none';
     hideVeil();
     toast(`✓ ${S.sections.length} secciones importadas`, 3000);
+    nav('home');
     renderHome();
   } catch (err) {
     hideVeil();
@@ -1164,6 +1403,13 @@ async function boot() {
     await openDB();
     S.sections = await dbAll('sections');
     S.sessions  = await dbAll('sessions');
+
+    // Load config key-value pairs
+    const cfgRows = await dbAll('config');
+    cfgRows.forEach(row => {
+      if (row.key === 'webAppUrl')  S.config.webAppUrl  = row.value || '';
+      if (row.key === 'lastSynced') S.config.lastSynced = row.value || null;
+    });
   } catch (e) {
     console.warn('DB init failed:', e);
   }
