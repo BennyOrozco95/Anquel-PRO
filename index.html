@@ -504,17 +504,94 @@
     .fade-up { animation: fadeUp .35s ease both; }
     .fade-up-2 { animation: fadeUp .35s .08s ease both; }
     .fade-up-3 { animation: fadeUp .35s .16s ease both; }
+
+    /* ─── MODE SELECTOR SCREEN ───────────────────────────────── */
+    #screen-mode {
+      background: var(--ink);
+      color: #fff;
+      justify-content: center;
+      align-items: center;
+      padding: 0 20px;
+      padding-top: var(--safe-top);
+      padding-bottom: var(--safe-bot);
+    }
+    .mode-header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .mode-header .app-logo { font-size: 3rem; margin-bottom: 10px; }
+    .mode-header h1 {
+      font-size: 1.6rem; font-weight: 800; letter-spacing: -.03em;
+    }
+    .mode-header p { font-size: .9rem; color: rgba(255,255,255,.4); margin-top: 6px; }
+
+    .mode-cards { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 360px; }
+
+    .mode-card {
+      border-radius: 18px; padding: 24px 20px;
+      display: flex; align-items: center; gap: 18px;
+      cursor: pointer; border: none; text-align: left;
+      transition: transform .12s, filter .12s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .mode-card:active { transform: scale(.96); filter: brightness(.9); }
+
+    .mode-card.anaqueles {
+      background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 60%, #3b82f6 100%);
+    }
+    .mode-card.pedidos {
+      background: linear-gradient(135deg, #b45309 0%, #d97706 60%, #f59e0b 100%);
+    }
+
+    .mode-card-icon {
+      width: 56px; height: 56px; border-radius: 14px; flex-shrink: 0;
+      background: rgba(255,255,255,.18);
+      display: flex; align-items: center; justify-content: center; font-size: 1.8rem;
+    }
+    .mode-card-info { flex: 1; color: #fff; }
+    .mode-card-title { font-size: 1.2rem; font-weight: 800; letter-spacing: -.02em; }
+    .mode-card-sub   { font-size: .83rem; opacity: .75; margin-top: 4px; line-height: 1.4; }
+    .mode-card-arrow { font-size: 1.4rem; color: rgba(255,255,255,.5); flex-shrink: 0; }
   </style>
 </head>
 <body>
 
 <!-- ══════════════════════════════════════════════════
+     MODE SELECTOR (first screen)
+══════════════════════════════════════════════════════ -->
+<div class="screen off" id="screen-mode">
+  <div class="mode-header fade-up">
+    <div class="app-logo">🏪</div>
+    <h1>Gestión de Tienda</h1>
+    <p>Selecciona qué quieres hacer hoy</p>
+  </div>
+  <div class="mode-cards">
+    <button class="mode-card anaqueles fade-up-2" onclick="selectMode('anaqueles')">
+      <div class="mode-card-icon">🛒</div>
+      <div class="mode-card-info">
+        <div class="mode-card-title">Anaqueles</div>
+        <div class="mode-card-sub">Reposición y conteo de productos en exhibición</div>
+      </div>
+      <div class="mode-card-arrow">›</div>
+    </button>
+    <button class="mode-card pedidos fade-up-3" onclick="selectMode('pedidos')">
+      <div class="mode-card-icon">📋</div>
+      <div class="mode-card-info">
+        <div class="mode-card-title">Pedidos</div>
+        <div class="mode-card-sub">Gestión y seguimiento de pedidos a proveedores</div>
+      </div>
+      <div class="mode-card-arrow">›</div>
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
      HOME SCREEN
 ══════════════════════════════════════════════════════ -->
-<div class="screen" id="screen-home">
-  <div class="appbar">
-    <span style="font-size:1.4rem">🛒</span>
-    <h1>Anaqueles Pro</h1>
+<div class="screen off" id="screen-home">
+  <div class="appbar" id="home-appbar">
+    <button class="icon-btn" onclick="nav('mode')" title="Modos">←</button>
+    <h1 id="home-title">Anaqueles</h1>
     <button class="icon-btn" title="Configuración" onclick="nav('settings')">⚙️</button>
   </div>
   <div class="scroll-area" id="home-body"><!-- rendered by JS --></div>
@@ -526,28 +603,23 @@
 <div class="screen off" id="screen-settings">
   <div class="appbar">
     <button class="icon-btn" onclick="nav('home')">←</button>
-    <h1>Configuración</h1>
+    <h1 id="settings-title">Configuración</h1>
   </div>
   <div class="scroll-area">
 
     <!-- ── Apps Script Sync ─────────────────────────────────── -->
     <div class="settings-group">
-      <div class="settings-group-title">Sincronización con Google Sheets</div>
-
+      <div class="settings-group-title" id="settings-sync-label">Sincronización — Anaqueles</div>
       <div class="settings-row">
         <label>URL del Web App (Apps Script)</label>
-        <div class="hint">
-          Despliega el archivo <strong>SyncEndpoint.gs</strong> como Web App en tu proyecto
-          de Apps Script y pega aquí la URL que te genera.
-        </div>
+        <div class="hint">Despliega <strong>SyncEndpoint.gs</strong> como Web App y pega la URL.</div>
         <textarea class="url-input" id="webapp-url-input" rows="3"
           placeholder="https://script.google.com/macros/s/…/exec"
-          oninput="onUrlInput()"
-        ></textarea>
+          oninput="onUrlInput()"></textarea>
         <div id="url-status" class="status-chip none">Sin configurar</div>
         <div class="row-btns" style="margin-top:4px">
           <button class="btn btn-ghost btn-sm" id="btn-test-url" onclick="testConnection()" disabled>
-            🔌 Probar conexión
+            🔌 Probar
           </button>
           <button class="btn btn-blue btn-sm" id="btn-save-url" onclick="saveWebAppUrl()" disabled>
             💾 Guardar URL
@@ -558,18 +630,14 @@
 
     <!-- ── Import xlsx fallback ─────────────────────────────── -->
     <div class="settings-group">
-      <div class="settings-group-title">Importar desde archivo Excel</div>
+      <div class="settings-group-title" id="settings-import-label">Importar Excel — Anaqueles</div>
       <div class="settings-row">
         <label>Cargar .xlsx manualmente</label>
-        <div class="hint">
-          Usa esta opción si prefieres exportar el archivo desde tu computadora
-          y cargarlo directo. Formato: Col A=Nombre, B=Requeridos, E=Imagen, F=Activo.
-        </div>
+        <div class="hint">Col A=Nombre, B=Requeridos, E=Imagen, F=Activo (Yes/No).</div>
         <button class="btn btn-ghost" onclick="document.getElementById('file-pick').click()">
           📂 Seleccionar archivo .xlsx
         </button>
         <input type="file" id="file-pick" accept=".xlsx,.xls" onchange="onFilePick(event)">
-
         <div id="import-preview" style="display:none; width:100%; margin-top:8px">
           <h2 class="sec" id="preview-title">Secciones detectadas</h2>
           <div id="detected-list"></div>
@@ -585,8 +653,8 @@
     <div class="settings-group">
       <div class="settings-group-title">Zona de peligro</div>
       <div class="settings-row">
-        <label>Borrar catálogo completo</label>
-        <div class="hint">Elimina todas las secciones y productos. Los conteos de sesiones no se borran.</div>
+        <label id="settings-delete-label">Borrar catálogo de Anaqueles</label>
+        <div class="hint">Solo borra las secciones del modo activo. Las sesiones no se eliminan.</div>
         <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)"
                 onclick="deleteCatalog()">🗑️ Borrar catálogo</button>
       </div>
@@ -719,16 +787,21 @@ async function dbClear(store) {
    APP STATE
 ═══════════════════════════════════════════════════════════ */
 const S = {
-  sections:     [],   // {id, name, products:[{id,name,required,imageUrl}], importedAt}
-  sessions:     [],   // {id, sectionId, sectionName, date, completedAt, counts:[...]}
-  config:       { webAppUrl: '', lastSynced: null },
+  mode:         'anaqueles',  // 'anaqueles' | 'pedidos'
+  sections:     [],   // filtered by current mode
+  sessions:     [],   // filtered by current mode
+  // per-mode config: { webAppUrl, lastSynced }
+  configs: {
+    anaqueles: { webAppUrl: '', lastSynced: null },
+    pedidos:   { webAppUrl: '', lastSynced: null }
+  },
 
   // counting
   activeSection: null,
   products:      [],
   idx:           0,
   entered:       '',
-  counts:        [],   // sparse array indexed by product idx
+  counts:        [],
 
   // import
   pending: [],
@@ -737,15 +810,57 @@ const S = {
   missing: []
 };
 
+// Shorthand: always refers to the active mode's config
+Object.defineProperty(S, 'config', {
+  get() { return S.configs[S.mode]; }
+});
+
 /* ═══════════════════════════════════════════════════════════
-   NAVIGATION — defined inside settings section below
+   DB HELPER — delete all records of a given mode
 ═══════════════════════════════════════════════════════════ */
+async function dbDelByMode(store, mode) {
+  const all = await dbAll(store);
+  for (const rec of all) {
+    const recMode = rec.mode || 'anaqueles'; // backward compat
+    if (recMode === mode) await dbDel(store, rec.id);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NAVIGATION
+═══════════════════════════════════════════════════════════ */
+function nav(screen) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('off'));
+  document.getElementById('screen-' + screen).classList.remove('off');
+  if (screen === 'settings') populateSettings();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MODE SELECTION
+═══════════════════════════════════════════════════════════ */
+async function selectMode(mode) {
+  S.mode = mode;
+
+  // Filter DB data for the chosen mode
+  const allSections = await dbAll('sections');
+  const allSessions = await dbAll('sessions');
+  S.sections = allSections.filter(s => (s.mode || 'anaqueles') === mode);
+  S.sessions  = allSessions.filter(s => (s.mode || 'anaqueles') === mode);
+
+  renderHome();
+}
 
 /* ═══════════════════════════════════════════════════════════
    HOME SCREEN
 ═══════════════════════════════════════════════════════════ */
 function renderHome() {
   nav('home');
+
+  // Update appbar title to reflect active mode
+  const modeLabel = S.mode === 'pedidos' ? 'Pedidos' : 'Anaqueles';
+  const modeEmoji = S.mode === 'pedidos' ? '📋' : '🛒';
+  document.getElementById('home-title').textContent = modeLabel;
+
   const today = todayStr();
   const doneSectionIds = new Set(
     S.sessions.filter(s => s.date === today).map(s => s.sectionId)
@@ -778,7 +893,7 @@ function renderHome() {
   if (S.sections.length === 0) {
     el.innerHTML = syncCard + `
       <div class="empty-state fade-up-2">
-        <div class="icon">📦</div>
+        <div class="icon">${modeEmoji}</div>
         <h2>Sin catálogo</h2>
         <p>${hasUrl
           ? 'Toca <strong>Sync</strong> para descargar tu catálogo desde Google Sheets.'
@@ -794,6 +909,8 @@ function renderHome() {
   const r = 24, circ = 2 * Math.PI * r;
   const offset = circ * (1 - pct / 100);
 
+  const sectionWord = S.mode === 'pedidos' ? 'Lista(s)' : 'Sección(es)';
+
   let html = syncCard + `
     <div class="progress-strip fade-up-2">
       <div class="progress-ring">
@@ -808,13 +925,13 @@ function renderHome() {
       <div style="flex:1">
         <div style="font-weight:700;font-size:1rem">Progreso de hoy</div>
         <div style="color:var(--muted);font-size:.85rem;margin-top:3px">
-          ${done === total ? '¡Todas las secciones contadas! 🎉' : `${total - done} sección(es) pendiente(s)`}
+          ${done === total ? '¡Todo listo! 🎉' : `${total - done} ${sectionWord.toLowerCase()} pendiente(s)`}
         </div>
       </div>
     </div>
 
     <div class="reset-row fade-up-2">
-      <h2 class="sec" style="margin-bottom:0">Secciones del anaquel</h2>
+      <h2 class="sec" style="margin-bottom:0">${S.mode === 'pedidos' ? 'Listas de pedidos' : 'Secciones del anaquel'}</h2>
       <button class="btn-reset" onclick="confirmResetProgress()">↺ Reiniciar día</button>
     </div>
 
@@ -826,7 +943,7 @@ function renderHome() {
     html += `
       <div class="shelf-tile ${isDone ? 'done' : 'pending'}" onclick="startCount('${sec.id}')">
         ${isDone ? `<div class="shelf-tile-check">✓</div>` : ''}
-        <div class="shelf-tile-icon">${isDone ? '✅' : '🧮'}</div>
+        <div class="shelf-tile-icon">${isDone ? '✅' : (S.mode === 'pedidos' ? '📋' : '🧮')}</div>
         <div class="shelf-tile-name">${esc(sec.name)}</div>
         <div class="shelf-tile-sub">${sec.products.length} productos</div>
       </div>`;
@@ -863,17 +980,20 @@ async function syncFromSheets() {
 
   try {
     const sections = await fetchSectionsFromSheets(S.config.webAppUrl);
+    // Stamp mode on each section
+    const stamped = sections.map(s => ({ ...s, mode: S.mode }));
 
-    await dbClear('sections');
-    for (const sec of sections) await dbPut('sections', sec);
-    S.sections = sections;
+    // Only replace sections belonging to current mode
+    await dbDelByMode('sections', S.mode);
+    for (const sec of stamped) await dbPut('sections', sec);
+    S.sections = stamped;
 
     S.config.lastSynced = Date.now();
-    await dbPut('config', { key: 'webAppUrl',   value: S.config.webAppUrl });
-    await dbPut('config', { key: 'lastSynced',  value: S.config.lastSynced });
+    await dbPut('config', { key: `${S.mode}_webAppUrl`,  value: S.config.webAppUrl });
+    await dbPut('config', { key: `${S.mode}_lastSynced`, value: S.config.lastSynced });
 
     hideVeil();
-    toast(`✓ ${sections.length} secciones sincronizadas`, 3000);
+    toast(`✓ ${stamped.length} secciones sincronizadas`, 3000);
     renderHome();
   } catch (err) {
     hideVeil();
@@ -923,7 +1043,7 @@ async function saveWebAppUrl() {
   const url = document.getElementById('webapp-url-input').value.trim();
   if (!url) return;
   S.config.webAppUrl = url;
-  await dbPut('config', { key: 'webAppUrl', value: url });
+  await dbPut('config', { key: `${S.mode}_webAppUrl`, value: url });
   setUrlStatus('ok', '✓ URL guardada');
   toast('✓ URL guardada', 2000);
 }
@@ -943,28 +1063,34 @@ async function testConnection() {
   }
 }
 
-/** Populate settings screen fields when navigating to it */
-function nav(screen) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.add('off'));
-  document.getElementById('screen-' + screen).classList.remove('off');
-  if (screen === 'settings') populateSettings();
-}
-
 function populateSettings() {
+  const modeLabel = S.mode === 'pedidos' ? 'Pedidos' : 'Anaqueles';
+  document.getElementById('settings-title').textContent = `Configuración — ${modeLabel}`;
+  document.getElementById('settings-sync-label').textContent = `Sincronización — ${modeLabel}`;
+  document.getElementById('settings-import-label').textContent = `Importar Excel — ${modeLabel}`;
+  document.getElementById('settings-delete-label').textContent = `Borrar catálogo de ${modeLabel}`;
+
   const input = document.getElementById('webapp-url-input');
-  if (input && S.config.webAppUrl) {
-    input.value = S.config.webAppUrl;
+  input.value = S.config.webAppUrl || '';
+  if (S.config.webAppUrl) {
     setUrlStatus('ok', S.config.lastSynced
       ? `✓ Última sync: ${new Date(S.config.lastSynced).toLocaleString('es-MX', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}`
       : '✓ URL guardada');
     document.getElementById('btn-test-url').disabled = false;
     document.getElementById('btn-save-url').disabled = false;
+  } else {
+    setUrlStatus('none', 'Sin configurar');
+    document.getElementById('btn-test-url').disabled = true;
+    document.getElementById('btn-save-url').disabled = true;
   }
+  // Reset import preview
+  document.getElementById('import-preview').style.display = 'none';
 }
 
 async function deleteCatalog() {
-  if (!confirm('¿Borrar todo el catálogo? Las sesiones de conteo no se afectan.')) return;
-  await dbClear('sections');
+  const modeLabel = S.mode === 'pedidos' ? 'Pedidos' : 'Anaqueles';
+  if (!confirm(`¿Borrar el catálogo de ${modeLabel}? Las sesiones no se afectan.`)) return;
+  await dbDelByMode('sections', S.mode);
   S.sections = [];
   toast('Catálogo borrado', 2000);
   nav('home');
@@ -1087,10 +1213,11 @@ function showPreview(sections) {
 async function confirmImport() {
   showVeil('Guardando catálogo…');
   try {
-    await dbClear('sections');
-    for (const sec of S.pending) await dbPut('sections', sec);
-    S.sections = S.pending;
-    S.pending = [];
+    const stamped = S.pending.map(s => ({ ...s, mode: S.mode }));
+    await dbDelByMode('sections', S.mode);
+    for (const sec of stamped) await dbPut('sections', sec);
+    S.sections = stamped;
+    S.pending  = [];
 
     document.getElementById('import-preview').style.display = 'none';
     hideVeil();
@@ -1215,9 +1342,8 @@ async function confirmResetProgress() {
   const today = todayStr();
   const count = S.sessions.filter(s => s.date === today).length;
   if (count === 0) { toast('No hay progreso de hoy que reiniciar', 2000); return; }
-  if (!confirm(`¿Reiniciar el progreso de hoy? Se borrarán ${count} conteo(s) registrados hoy.`)) return;
+  if (!confirm(`¿Reiniciar el progreso de hoy? Se borrarán ${count} conteo(s) de ${S.mode === 'pedidos' ? 'Pedidos' : 'Anaqueles'}.`)) return;
 
-  // Remove today's sessions from DB and memory
   const toDelete = S.sessions.filter(s => s.date === today);
   for (const s of toDelete) await dbDel('sessions', s.id);
   S.sessions = S.sessions.filter(s => s.date !== today);
@@ -1234,7 +1360,8 @@ function buildSession() {
              required: p.required, counted, missing };
   });
   return {
-    id: `sess_${Date.now()}`,
+    id: `sess_${S.mode}_${Date.now()}`,
+    mode: S.mode,
     sectionId: S.activeSection.id,
     sectionName: S.activeSection.name,
     date: todayStr(),
@@ -1407,19 +1534,25 @@ function hideVeil() {
 async function boot() {
   try {
     await openDB();
-    S.sections = await dbAll('sections');
-    S.sessions  = await dbAll('sessions');
 
-    // Load config key-value pairs
+    // Config — load per-mode URLs and sync timestamps
     const cfgRows = await dbAll('config');
     cfgRows.forEach(row => {
-      if (row.key === 'webAppUrl')  S.config.webAppUrl  = row.value || '';
-      if (row.key === 'lastSynced') S.config.lastSynced = row.value || null;
+      // New namespaced keys: anaqueles_webAppUrl, pedidos_webAppUrl …
+      ['anaqueles', 'pedidos'].forEach(m => {
+        if (row.key === `${m}_webAppUrl`)  S.configs[m].webAppUrl  = row.value || '';
+        if (row.key === `${m}_lastSynced`) S.configs[m].lastSynced = row.value || null;
+      });
+      // Back-compat: old non-namespaced key belongs to anaqueles
+      if (row.key === 'webAppUrl')  S.configs.anaqueles.webAppUrl  = S.configs.anaqueles.webAppUrl  || row.value || '';
+      if (row.key === 'lastSynced') S.configs.anaqueles.lastSynced = S.configs.anaqueles.lastSynced || row.value || null;
     });
   } catch (e) {
     console.warn('DB init failed:', e);
   }
-  renderHome();
+
+  // Always start at the mode selector
+  nav('mode');
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
