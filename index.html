@@ -1485,7 +1485,12 @@ function makePDF() {
    WHATSAPP
 ═══════════════════════════════════════════════════════════ */
 function sendWA() {
-  const m = S.missing;
+  if (S.mode === 'pedidos') sendWA_Pedidos();
+  else                      sendWA_Anaqueles();
+}
+
+function sendWA_Anaqueles() {
+  const m   = S.missing;
   const sec = S.activeSection;
   const date = new Date().toLocaleDateString('es-MX',
     { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -1498,6 +1503,24 @@ function sendWA() {
   });
   txt += `━━━━━━━━━━━━━━━━━━━━\n`;
   txt += `_Total: ${m.length} productos para surtir_`;
+
+  window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
+}
+
+function sendWA_Pedidos() {
+  const m   = S.missing;
+  const sec = S.activeSection;
+  const date = new Date().toLocaleDateString('es-MX',
+    { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  let txt = `🛍️ *Pedido a Proveedor*\n`;
+  txt += `📦 *${sec.name}*  ·  📅 ${date}\n`;
+  txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+  m.forEach((p, i) => {
+    txt += `${i + 1}. ${p.name} — *${p.missing} pz.*\n`;
+  });
+  txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+  txt += `_Total: ${m.length} producto(s) solicitado(s)_`;
 
   window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
 }
