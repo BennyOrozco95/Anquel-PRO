@@ -885,12 +885,18 @@ async function syncFromSheets() {
 
 /** Fetch + parse JSON from the Apps Script Web App URL */
 async function fetchSectionsFromSheets(url) {
-  const resp = await fetch(url, { redirect: 'follow' });
+  // Append a timestamp so Google's CDN and the service worker
+  // always treat this as a brand-new request — never a cached one.
+  const bustUrl = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+
+  const resp = await fetch(bustUrl, {
+    redirect: 'follow',
+    cache: 'no-store'   // bypass browser / service-worker cache
+  });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const data = await resp.json();
   if (!data.ok) throw new Error(data.error || 'Respuesta inválida del servidor');
   if (!Array.isArray(data.sections)) throw new Error('El endpoint no devolvió secciones');
-  // Stamp importedAt
   return data.sections.map(s => ({ ...s, importedAt: Date.now() }));
 }
 

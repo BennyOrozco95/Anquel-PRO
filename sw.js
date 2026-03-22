@@ -26,10 +26,16 @@ self.addEventListener('activate', event => {
   );
 });
 
-/* Fetch: cache-first for shell, network-first for images */
+/* Fetch: never cache Apps Script calls; cache-first for everything else */
 self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
+
+  /* Apps Script endpoint — ALWAYS go to network, never cache */
+  if (url.hostname === 'script.google.com') {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
+    return;
+  }
 
   /* Google Drive thumbnail images — network with fallback */
   if (url.hostname === 'drive.google.com' || url.hostname === 'lh3.googleusercontent.com') {
