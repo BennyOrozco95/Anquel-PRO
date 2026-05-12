@@ -633,7 +633,7 @@
       <div class="settings-group-title" id="settings-import-label">Importar Excel — Anaqueles</div>
       <div class="settings-row">
         <label>Cargar .xlsx manualmente</label>
-        <div class="hint">Col A=Nombre, B=Requeridos, E=Imagen, F=Activo (Yes/No).</div>
+        <div class="hint">Col A=Nombre, B=Requeridos, E=Imagen, F=Activo (Yes/No), G=Mostrar si faltan desde.</div>
         <button class="btn btn-ghost" onclick="document.getElementById('file-pick').click()">
           📂 Seleccionar archivo .xlsx
         </button>
@@ -1017,7 +1017,7 @@ async function fetchSectionsFromSheets(url) {
   const data = await resp.json();
   if (!data.ok) throw new Error(data.error || 'Respuesta inválida del servidor');
   if (!Array.isArray(data.sections)) throw new Error('El endpoint no devolvió secciones');
-  return data.sections.map(s => ({ ...s, importedAt: Date.now() }));
+  return normalizeCatalogSections(data.sections).map(s => ({ ...s, importedAt: Date.now() }));
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1175,11 +1175,17 @@ function parseXLSX(ab) {
       const activeVal = activeCell ? String(activeCell.v || '').trim().toLowerCase() : 'yes';
       if (activeVal === 'no') continue; // skip inactive products
 
+      // Col G (6): minimum missing quantity to show in the restock list.
+      // Example: 3 = only show this product when missing >= 3. Blank/invalid = 1.
+      const minCell = ws[XLSX.utils.encode_cell({ r, c: 6 })];
+      const minMissing = normalizeMinMissing(minCell ? minCell.v : undefined);
+
       products.push({
         id: `${sheetName}_r${r}`,
         name,
         required,
-        imageUrl
+        imageUrl,
+        minMissing
       });
     }
 
@@ -1260,7 +1266,10 @@ function renderProduct() {
   // Product
   document.getElementById('ci-img').src = p.imageUrl || '';
   document.getElementById('ci-name').textContent = p.name;
-  document.getElementById('ci-req').textContent = `Requeridos: ${p.required}`;
+  const minMissing = normalizeMinMissing(p.minMissing);
+  document.getElementById('ci-req').textContent = minMissing > 1
+    ? `Requeridos: ${p.required} · Reportar desde: ${minMissing}`
+    : `Requeridos: ${p.required}`;
 
   // Restore saved count for this product if navigating back
   const saved = S.counts[S.idx];
@@ -1316,7 +1325,7 @@ function nextProduct() {
 
 async function finishCount() {
   const session = buildSession();
-  S.missing = session.counts.filter(c => c.missing > 0);
+  S.missing = session.counts.filter(c => c.shouldRestock);
 
   try {
     await dbPut('sessions', session);
@@ -1356,8 +1365,12 @@ function buildSession() {
   const counts = S.products.map((p, i) => {
     const counted = S.counts[i] ?? 0;
     const missing = Math.max(0, p.required - counted);
+    // Anaqueles: allow a per-product threshold to ignore small gaps.
+    // Pedidos keeps the previous behavior unless a threshold is explicitly provided.
+    const minMissing = normalizeMinMissing(p.minMissing);
+    const shouldRestock = missing >= minMissing;
     return { productId: p.id, name: p.name, imageUrl: p.imageUrl,
-             required: p.required, counted, missing };
+             required: p.required, counted, missing, minMissing, shouldRestock };
   });
   return {
     id: `sess_${S.mode}_${Date.now()}`,
@@ -1406,7 +1419,7 @@ function renderResults() {
              onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
         <div class="missing-info">
           <div class="missing-name">${esc(p.name)}</div>
-          <div class="missing-detail">Hay: ${p.counted} &nbsp;·&nbsp; Req: ${p.required}</div>
+          <div class="missing-detail">Hay: ${p.counted} &nbsp;·&nbsp; Req: ${p.required}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}</div>
         </div>
         <div class="missing-qty">${p.missing}</div>
       </div>`).join('');
@@ -1440,7 +1453,7 @@ function makePDF() {
     <tr>
       <td class="n">${i + 1}</td>
       <td>${p.name}</td>
-      <td class="c">${p.counted} / ${p.required}</td>
+      <td class="c">${p.counted} / ${p.required}${p.minMissing > 1 ? ` · Min ${p.minMissing}` : ''}</td>
       <td class="miss">${p.missing}</td>
     </tr>`).join('');
 
@@ -1528,6 +1541,30 @@ function sendWA_Pedidos() {
 /* ═══════════════════════════════════════════════════════════
    UTILITIES
 ═══════════════════════════════════════════════════════════ */
+function normalizeMinMissing(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : 1;
+}
+
+function normalizeCatalogSections(sections) {
+  return (sections || []).map((sec, secIdx) => ({
+    ...sec,
+    id: sec.id || `sec_${String(sec.name || 'seccion').replace(/\W+/g, '_')}_${secIdx}_${Date.now()}`,
+    products: (sec.products || []).map((p, prodIdx) => ({
+      ...p,
+      id: p.id || `${sec.name || 'sec'}_p${prodIdx}`,
+      required: Number(p.required) || 0,
+      minMissing: normalizeMinMissing(
+        p.minMissing ??
+        p.minToShow ??
+        p.threshold ??
+        p.umbralFaltante ??
+        p.minimoSurtir
+      )
+    }))
+  }));
+}
+
 function todayStr() { return new Date().toISOString().split('T')[0]; }
 
 function esc(s) {
