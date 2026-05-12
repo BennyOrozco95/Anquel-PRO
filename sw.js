@@ -1,5 +1,5 @@
 /* ─── Anaqueles Pro — Service Worker ────────────────────────── */
-const CACHE  = 'anaqueles-pro-v1';
+const CACHE  = 'anaqueles-pro-v2';
 const SHELL  = [
   './',
   './index.html',
