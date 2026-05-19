@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#0f172a">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Anaqueles Pro V1.1">
+  <meta name="apple-mobile-web-app-title" content="Anaqueles Pro">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
   <style>
@@ -1536,51 +1536,52 @@ function makePDF() {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${reportTitle} — ${esc(sec.name)}</title>
   <style>
-    /* Formato angosto tipo ticket para que el PDF se lea bien en celular.
-       En vez de A4 + tabla, se imprime en páginas de 100mm de ancho con tarjetas. */
-    @page{size:100mm 180mm;margin:5mm}
+    /* Formato A4 real para Android.
+       El PDF conserva página ISO A4, pero usa tarjetas compactas de ancho completo
+       para evitar márgenes gigantes y aprovechar mejor cada hoja. */
+    @page{size:A4 portrait;margin:6mm}
     *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     html{font-size:16px}
     body{font-family:Arial,sans-serif;margin:0;color:#0f172a;background:#fff}
-    .report{width:100%;max-width:90mm;margin:0 auto}
+    .report{width:100%;max-width:none;margin:0}
 
-    .hdr{background:${headerBg};color:#fff;padding:14px 14px 13px;border-radius:14px;margin-bottom:10px}
-    .hdr h1{margin:0;font-size:16px;line-height:1.2}
-    .hdr p{margin:5px 0 0;opacity:.78;font-size:11px}
+    .hdr{background:${headerBg};color:#fff;padding:11px 13px 10px;border-radius:11px;margin-bottom:7px}
+    .hdr h1{margin:0;font-size:18px;line-height:1.15}
+    .hdr p{margin:4px 0 0;opacity:.82;font-size:12px}
 
-    .summary{display:grid;grid-template-columns:1fr;gap:6px;margin:0 0 10px}
-    .pill{display:inline-flex;align-items:center;gap:6px;width:max-content;max-width:100%;padding:6px 10px;border-radius:999px;background:${accentBg};color:${accentText};border:1px solid ${accentBorder};font-size:11px;font-weight:800}
-    .total{font-size:10.5px;color:#64748b}
+    .summary{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 7px}
+    .pill{display:inline-flex;align-items:center;gap:6px;width:max-content;max-width:100%;padding:5px 10px;border-radius:999px;background:${accentBg};color:${accentText};border:1px solid ${accentBorder};font-size:12px;font-weight:900}
+    .total{font-size:11px;color:#64748b;text-align:right}
 
-    .item-card{border:1px solid #e2e8f0;border-radius:14px;padding:10px;margin-bottom:9px;background:#fff;break-inside:avoid;page-break-inside:avoid;box-shadow:0 1px 3px rgba(15,23,42,.06)}
-    .item-head{display:flex;gap:10px;align-items:flex-start}
+    .item-card{border:1px solid #dbe4ef;border-radius:12px;padding:8px 9px;margin-bottom:6px;background:#fff;break-inside:avoid;page-break-inside:avoid;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+    .item-head{display:flex;gap:11px;align-items:flex-start}
 
-    /* Imagen más grande para identificar mejor el producto en el PDF móvil. */
-    .thumb{width:82px;height:82px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 82px}
+    /* Imagen grande pero compacta: aprovecha A4 sin dejar solo 3 productos por hoja. */
+    .thumb{width:96px;height:96px;border:1px solid #dbe4ef;border-radius:11px;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 96px}
     .thumb img{width:100%;height:100%;object-fit:contain;padding:2px}
-    .no-img{width:100%;height:100%;align-items:center;justify-content:center;font-size:32px;color:#cbd5e1}
+    .no-img{width:100%;height:100%;align-items:center;justify-content:center;font-size:34px;color:#cbd5e1}
 
-    .item-copy{flex:1;min-width:0;padding-top:1px}
-    .item-number{font-size:10px;color:#94a3b8;font-weight:800;margin-bottom:3px}
-    .item-copy h2{margin:0;font-size:13.5px;line-height:1.22;color:#0f172a}
+    .item-copy{flex:1;min-width:0;padding-top:0}
+    .item-number{font-size:11px;color:#94a3b8;font-weight:900;margin-bottom:3px}
+    .item-copy h2{margin:0;font-size:17px;line-height:1.18;color:#0f172a;letter-spacing:-.01em}
 
-    .order-inline{display:inline-flex;align-items:baseline;gap:7px;background:${accentBg};border:1px solid ${accentBorder};border-radius:999px;padding:5px 9px;margin-top:8px;color:${accentText}}
-    .order-label{font-size:10px;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
-    .order-value{font-size:22px;font-weight:900;line-height:1;color:#dc2626}
-    .order-value small{font-size:10px;margin-left:2px;color:#64748b;font-weight:800}
+    .order-inline{display:inline-flex;align-items:baseline;gap:8px;background:${accentBg};border:1px solid ${accentBorder};border-radius:999px;padding:5px 10px;margin-top:7px;color:${accentText}}
+    .order-label{font-size:11px;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
+    .order-value{font-size:25px;font-weight:900;line-height:1;color:#dc2626}
+    .order-value small{font-size:11px;margin-left:3px;color:#64748b;font-weight:900}
 
-    .meta-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-    .chip{font-size:10.5px;line-height:1.15;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:4px 7px}
-    .package-note{margin-top:6px;font-size:10.5px;line-height:1.3;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:6px 8px}
+    .meta-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+    .chip{font-size:11.5px;line-height:1.15;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:4px 8px}
+    .package-note{margin-top:6px;font-size:11.5px;line-height:1.25;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:5px 8px}
 
-    .foot{margin-top:12px;font-size:10px;line-height:1.35;color:#94a3b8;text-align:center}
+    .foot{margin-top:8px;font-size:10.5px;line-height:1.3;color:#94a3b8;text-align:center}
 
     @media screen{
-      body{background:#e2e8f0;padding:12px}
-      .report{background:#fff;border-radius:16px;padding:10px;box-shadow:0 6px 24px rgba(15,23,42,.14)}
+      body{background:#e2e8f0;padding:10px}
+      .report{background:#fff;border-radius:14px;padding:10px;box-shadow:0 6px 24px rgba(15,23,42,.14)}
     }
     @media print{
-      body{background:#fff;padding:0}
+      html,body{width:auto;height:auto;background:#fff;padding:0}
       .report{padding:0;box-shadow:none}
       .item-card{box-shadow:none}
     }
