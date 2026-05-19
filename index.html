@@ -633,7 +633,7 @@
       <div class="settings-group-title" id="settings-import-label">Importar Excel — Anaqueles</div>
       <div class="settings-row">
         <label>Cargar .xlsx manualmente</label>
-        <div class="hint">Col A=Nombre, B=Requeridos, E=Imagen, F=Activo (Yes/No), G=Mostrar si faltan desde.</div>
+        <div class="hint">Col A=Nombre, B=Requeridos, E=Imagen, F=Activo (Yes/No), G=Mostrar si faltan desde, H=Unidades por paquete (Pedidos).</div>
         <button class="btn btn-ghost" onclick="document.getElementById('file-pick').click()">
           📂 Seleccionar archivo .xlsx
         </button>
@@ -1180,12 +1180,18 @@ function parseXLSX(ab) {
       const minCell = ws[XLSX.utils.encode_cell({ r, c: 6 })];
       const minMissing = normalizeMinMissing(minCell ? minCell.v : undefined);
 
+      // Col H (7): units per package for supplier orders.
+      // Example: 4 = this product is purchased in packs of 4 pieces. Blank/invalid = 1.
+      const packageCell = ws[XLSX.utils.encode_cell({ r, c: 7 })];
+      const packageSize = normalizePackageSize(packageCell ? packageCell.v : undefined);
+
       products.push({
         id: `${sheetName}_r${r}`,
         name,
         required,
         imageUrl,
-        minMissing
+        minMissing,
+        packageSize
       });
     }
 
@@ -1267,9 +1273,11 @@ function renderProduct() {
   document.getElementById('ci-img').src = p.imageUrl || '';
   document.getElementById('ci-name').textContent = p.name;
   const minMissing = normalizeMinMissing(p.minMissing);
+  const packageSize = normalizePackageSize(p.packageSize);
+  const packageInfo = S.mode === 'pedidos' && packageSize > 1 ? ` · Paquete: ${packageSize} pz` : '';
   document.getElementById('ci-req').textContent = minMissing > 1
-    ? `Requeridos: ${p.required} · Reportar desde: ${minMissing}`
-    : `Requeridos: ${p.required}`;
+    ? `Requeridos: ${p.required} · Reportar desde: ${minMissing}${packageInfo}`
+    : `Requeridos: ${p.required}${packageInfo}`;
 
   // Restore saved count for this product if navigating back
   const saved = S.counts[S.idx];
@@ -1365,12 +1373,21 @@ function buildSession() {
   const counts = S.products.map((p, i) => {
     const counted = S.counts[i] ?? 0;
     const missing = Math.max(0, p.required - counted);
-    // Anaqueles: allow a per-product threshold to ignore small gaps.
-    // Pedidos keeps the previous behavior unless a threshold is explicitly provided.
     const minMissing = normalizeMinMissing(p.minMissing);
-    const shouldRestock = missing >= minMissing;
+    const packageSize = normalizePackageSize(p.packageSize);
+    const order = S.mode === 'pedidos'
+      ? calcOrderForPackage(missing, packageSize)
+      : { packages: missing, pieces: missing, packageSize: 1 };
+
+    // Anaqueles reporta piezas faltantes. Pedidos reporta paquetes calculados,
+    // y cuando el redondeo da 0 paquetes no se agrega al pedido.
+    const shouldRestock = S.mode === 'pedidos'
+      ? missing >= minMissing && (packageSize > 1 ? order.packages > 0 : missing > 0)
+      : missing >= minMissing;
+
     return { productId: p.id, name: p.name, imageUrl: p.imageUrl,
-             required: p.required, counted, missing, minMissing, shouldRestock };
+             required: p.required, counted, missing, minMissing, packageSize,
+             orderPackages: order.packages, orderPieces: order.pieces, shouldRestock };
   });
   return {
     id: `sess_${S.mode}_${Date.now()}`,
@@ -1413,16 +1430,25 @@ function renderResults() {
         <p>Todos los productos están en las cantidades requeridas.</p>
       </div>`;
   } else {
-    body.innerHTML = m.map(p => `
+    const isPedidos = S.mode === 'pedidos';
+    body.innerHTML = m.map(p => {
+      const packageSize = normalizePackageSize(p.packageSize);
+      const qtyMain = isPedidos && packageSize > 1 ? p.orderPackages : p.missing;
+      const qtyLabel = isPedidos && packageSize > 1 ? 'paq' : 'pz';
+      const packageText = isPedidos && packageSize > 1
+        ? ` &nbsp;·&nbsp; Paquete: ${packageSize} pz &nbsp;·&nbsp; Pedir: ${p.orderPieces} pz`
+        : '';
+      return `
       <div class="missing-card">
         <img class="missing-thumb" src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
              onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
         <div class="missing-info">
           <div class="missing-name">${esc(p.name)}</div>
-          <div class="missing-detail">Hay: ${p.counted} &nbsp;·&nbsp; Req: ${p.required}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}</div>
+          <div class="missing-detail">Hay: ${p.counted} &nbsp;·&nbsp; Req: ${p.required} &nbsp;·&nbsp; Faltan: ${p.missing}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}${packageText}</div>
         </div>
-        <div class="missing-qty">${p.missing}</div>
-      </div>`).join('');
+        <div class="missing-qty" title="${qtyLabel}">${qtyMain}<span style="font-size:.58rem;margin-left:2px">${qtyLabel}</span></div>
+      </div>`;
+    }).join('');
   }
 
   // Actions
@@ -1446,52 +1472,139 @@ function renderResults() {
 function makePDF() {
   const m = S.missing;
   const sec = S.activeSection;
+  const isPedidos = S.mode === 'pedidos';
+  const reportTitle = isPedidos ? 'Pedido a Proveedor' : 'Productos Faltantes';
+  const badgeText = isPedidos ? 'Productos solicitados' : 'Productos a surtir';
+  const headerBg = isPedidos ? '#b45309' : '#1e293b';
+  const filePrefix = isPedidos ? 'pedido' : 'faltantes';
   const date = new Date().toLocaleDateString('es-MX',
     { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-  const rows = m.map((p, i) => `
-    <tr>
-      <td class="n">${i + 1}</td>
-      <td>${p.name}</td>
-      <td class="c">${p.counted} / ${p.required}${p.minMissing > 1 ? ` · Min ${p.minMissing}` : ''}</td>
-      <td class="miss">${p.missing}</td>
-    </tr>`).join('');
+  const rows = m.map((p, i) => {
+    const hasImg = !!p.imageUrl;
+    const packageSize = normalizePackageSize(p.packageSize);
+    const usePackages = isPedidos && packageSize > 1;
+    const qtyMain = usePackages ? p.orderPackages : p.missing;
+    const qtyUnit = usePackages ? 'paq' : 'pz';
+    const packageMeta = usePackages
+      ? ` · Paquete: ${packageSize} pz · Pedir equivale a ${p.orderPieces} pz`
+      : '';
+    return `
+      <tr>
+        <td class="n">${i + 1}</td>
+        <td class="pic">
+          <div class="thumb">
+            ${hasImg ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
+              loading="eager" decoding="sync"
+              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">` : ''}
+            <span class="no-img" style="${hasImg ? 'display:none' : 'display:flex'}">📦</span>
+          </div>
+        </td>
+        <td class="prod">
+          <div class="prod-name">${esc(p.name)}</div>
+          <div class="prod-meta">Hay: ${p.counted} · Req: ${p.required} · Faltan: ${p.missing}${p.minMissing > 1 ? ` · Min: ${p.minMissing}` : ''}${packageMeta}</div>
+        </td>
+        <td class="miss"><span>${qtyMain}</span><small>${qtyUnit}</small></td>
+      </tr>`;
+  }).join('');
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${reportTitle} — ${esc(sec.name)}</title>
   <style>
-    body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#1e293b}
-    .hdr{background:#1e293b;color:#fff;padding:18px 20px;border-radius:8px;margin-bottom:20px}
-    .hdr h1{margin:0;font-size:16px}.hdr p{margin:4px 0 0;opacity:.65;font-size:12px}
+    @page{size:A4;margin:12mm}
+    *{box-sizing:border-box}
+    body{font-family:Arial,sans-serif;margin:0;color:#1e293b;background:#fff}
+    .hdr{background:${headerBg};color:#fff;padding:18px 20px;border-radius:10px;margin-bottom:14px}
+    .hdr h1{margin:0;font-size:18px;line-height:1.25}
+    .hdr p{margin:5px 0 0;opacity:.72;font-size:12px}
+    .summary{display:flex;gap:10px;align-items:center;margin:0 0 16px}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:#fef2f2;color:#dc2626;font-size:12px;font-weight:700}
+    .total{font-size:12px;color:#64748b}
     table{width:100%;border-collapse:collapse;font-size:13px}
     thead{background:#f1f5f9}
-    th,td{padding:9px 10px;border-bottom:1px solid #e2e8f0;text-align:left}
-    td.n{color:#94a3b8;width:32px}
-    td.c{color:#64748b;font-size:12px;width:80px}
-    td.miss{font-weight:700;font-size:15px;color:#dc2626;width:50px}
+    th,td{padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:middle}
+    th.n,td.n{color:#94a3b8;width:34px;text-align:center}
+    th.pic,td.pic{width:72px}
+    .thumb{width:58px;height:58px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .thumb img{width:100%;height:100%;object-fit:contain}
+    .no-img{width:100%;height:100%;align-items:center;justify-content:center;font-size:24px;color:#cbd5e1}
+    .prod-name{font-weight:700;line-height:1.25}
+    .prod-meta{font-size:11px;color:#64748b;margin-top:4px}
+    th.miss,td.miss{width:72px;text-align:center}
+    td.miss{font-weight:800;font-size:18px;color:#dc2626}
+    td.miss small{display:block;font-size:10px;line-height:1;color:#64748b;margin-top:2px;font-weight:700}
     tr:nth-child(even){background:#f8fafc}
-    @media print{body{padding:10px}}
+    tr{break-inside:avoid;page-break-inside:avoid}
+    .foot{margin-top:16px;font-size:11px;color:#94a3b8;text-align:center}
+    @media print{body{padding:0}.hdr{border-radius:0}}
   </style></head><body>
-  <div class="hdr">
-    <h1>📋 Productos Faltantes — ${esc(sec.name)}</h1>
-    <p>${date} &nbsp;·&nbsp; ${m.length} producto(s)</p>
-  </div>
-  <table>
-    <thead><tr><th>#</th><th>Producto</th><th>Hay / Req</th><th>Surtir</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <script>window.onload=()=>window.print()<\/script>
+    <div class="hdr">
+      <h1>${isPedidos ? '🛍️' : '📋'} ${reportTitle} — ${esc(sec.name)}</h1>
+      <p>${date} &nbsp;·&nbsp; ${m.length} producto(s)</p>
+    </div>
+    <div class="summary">
+      <span class="pill">⚠️ ${badgeText}</span>
+      <span class="total">Reporte generado desde Anaqueles Pro</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th class="n">#</th>
+          <th class="pic">Imagen</th>
+          <th>Producto</th>
+          <th class="miss">${isPedidos ? 'Pedir' : 'Surtir'}</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="foot">Usa “Guardar como PDF” en el diálogo de impresión para exportarlo.</div>
+    <script>
+      (function(){
+        let printed = false;
+        function safePrint(){
+          if (printed) return;
+          printed = true;
+          setTimeout(function(){ window.print(); }, 200);
+        }
+        function waitForImages(){
+          var imgs = Array.prototype.slice.call(document.images || []);
+          if (!imgs.length) return safePrint();
+
+          var pending = imgs.length;
+          function done(){
+            pending -= 1;
+            if (pending <= 0) safePrint();
+          }
+
+          imgs.forEach(function(img){
+            if (img.complete) done();
+            else {
+              img.onload = done;
+              img.onerror = done;
+            }
+          });
+
+          // Evita que una imagen lenta bloquee el reporte.
+          setTimeout(safePrint, 4000);
+        }
+        window.addEventListener('load', waitForImages);
+      })();
+    <\/script>
   </body></html>`;
 
   const blob = new Blob([html], { type: 'text/html' });
   const url  = URL.createObjectURL(blob);
   const win  = window.open(url, '_blank');
+
   if (!win) {
-    // Fallback: download HTML file
+    // Fallback: descarga el HTML imprimible si el navegador bloquea ventanas emergentes.
     const a = Object.assign(document.createElement('a'),
-      { href: url, download: `faltantes_${sec.name}_${date.replace(/\//g,'-')}.html` });
+      { href: url, download: `${filePrefix}_${sec.name}_${date.replace(/\//g,'-')}.html` });
     a.click();
   }
-  setTimeout(() => URL.revokeObjectURL(url), 8000);
+
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1530,7 +1643,12 @@ function sendWA_Pedidos() {
   txt += `📦 *${sec.name}*  ·  📅 ${date}\n`;
   txt += `━━━━━━━━━━━━━━━━━━━━\n`;
   m.forEach((p, i) => {
-    txt += `${i + 1}. ${p.name} — *${p.missing} pz.*\n`;
+    const packageSize = normalizePackageSize(p.packageSize);
+    if (packageSize > 1) {
+      txt += `${i + 1}. ${p.name} — *${p.orderPackages} paq.* (${p.orderPieces} pz · paquete ${packageSize})\n`;
+    } else {
+      txt += `${i + 1}. ${p.name} — *${p.missing} pz.*\n`;
+    }
   });
   txt += `━━━━━━━━━━━━━━━━━━━━\n`;
   txt += `_Total: ${m.length} producto(s) solicitado(s)_`;
@@ -1546,6 +1664,29 @@ function normalizeMinMissing(value) {
   return Number.isFinite(n) && n > 0 ? Math.ceil(n) : 1;
 }
 
+function normalizePackageSize(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : 1;
+}
+
+function calcOrderForPackage(missing, packageSize) {
+  const gap = Math.max(0, Number(missing) || 0);
+  const pack = normalizePackageSize(packageSize);
+  if (gap <= 0) return { packages: 0, pieces: 0, packageSize: pack };
+  if (pack <= 1) return { packages: gap, pieces: gap, packageSize: 1 };
+
+  const lowerPackages = Math.floor(gap / pack);
+  const upperPackages = Math.ceil(gap / pack);
+  const lowerPieces = lowerPackages * pack;
+  const upperPieces = upperPackages * pack;
+  const lowerDiff = Math.abs(gap - lowerPieces);
+  const upperDiff = Math.abs(upperPieces - gap);
+
+  // Si hay empate, se elige el menor para evitar pedir de más.
+  const packages = lowerDiff <= upperDiff ? lowerPackages : upperPackages;
+  return { packages, pieces: packages * pack, packageSize: pack };
+}
+
 function normalizeCatalogSections(sections) {
   return (sections || []).map((sec, secIdx) => ({
     ...sec,
@@ -1554,6 +1695,13 @@ function normalizeCatalogSections(sections) {
       ...p,
       id: p.id || `${sec.name || 'sec'}_p${prodIdx}`,
       required: Number(p.required) || 0,
+      packageSize: normalizePackageSize(
+        p.packageSize ??
+        p.packSize ??
+        p.unitsPerPackage ??
+        p.unidadesPorPaquete ??
+        p.paquete
+      ),
       minMissing: normalizeMinMissing(
         p.minMissing ??
         p.minToShow ??
