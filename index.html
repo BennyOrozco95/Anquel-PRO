@@ -1476,7 +1476,11 @@ function makePDF() {
   const reportTitle = isPedidos ? 'Pedido a Proveedor' : 'Productos Faltantes';
   const badgeText = isPedidos ? 'Productos solicitados' : 'Productos a surtir';
   const headerBg = isPedidos ? '#b45309' : '#1e293b';
+  const accentBg = isPedidos ? '#fffbeb' : '#fef2f2';
+  const accentBorder = isPedidos ? '#fde68a' : '#fecaca';
+  const accentText = isPedidos ? '#92400e' : '#991b1b';
   const filePrefix = isPedidos ? 'pedido' : 'faltantes';
+  const qtyLabelText = isPedidos ? 'Pedir' : 'Surtir';
   const date = new Date().toLocaleDateString('es-MX',
     { day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -1486,79 +1490,117 @@ function makePDF() {
     const usePackages = isPedidos && packageSize > 1;
     const qtyMain = usePackages ? p.orderPackages : p.missing;
     const qtyUnit = usePackages ? 'paq' : 'pz';
-    const packageMeta = usePackages
-      ? ` · Paquete: ${packageSize} pz · Pedir equivale a ${p.orderPieces} pz`
+    const minChip = p.minMissing > 1
+      ? `<span class="chip">Min: <strong>${p.minMissing}</strong></span>`
       : '';
+    const packageNote = usePackages
+      ? `<div class="package-note">Paquete: <strong>${packageSize} pz</strong> · Pedir equivale a <strong>${p.orderPieces} pz</strong></div>`
+      : '';
+    const imageMarkup = hasImg
+      ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
+          loading="eager" decoding="sync"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+      : '';
+
     return `
-      <tr>
-        <td class="n">${i + 1}</td>
-        <td class="pic">
+      <article class="item-card">
+        <div class="item-head">
           <div class="thumb">
-            ${hasImg ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
-              loading="eager" decoding="sync"
-              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">` : ''}
+            ${imageMarkup}
             <span class="no-img" style="${hasImg ? 'display:none' : 'display:flex'}">📦</span>
           </div>
-        </td>
-        <td class="prod">
-          <div class="prod-name">${esc(p.name)}</div>
-          <div class="prod-meta">Hay: ${p.counted} · Req: ${p.required} · Faltan: ${p.missing}${p.minMissing > 1 ? ` · Min: ${p.minMissing}` : ''}${packageMeta}</div>
-        </td>
-        <td class="miss"><span>${qtyMain}</span><small>${qtyUnit}</small></td>
-      </tr>`;
+
+          <div class="item-copy">
+            <div class="item-number">#${i + 1}</div>
+            <h2>${esc(p.name)}</h2>
+
+            <div class="order-inline">
+              <span class="order-label">${qtyLabelText}</span>
+              <span class="order-value">${qtyMain}<small>${qtyUnit}</small></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="meta-row">
+          <span class="chip">Hay: <strong>${p.counted}</strong></span>
+          <span class="chip">Req: <strong>${p.required}</strong></span>
+          <span class="chip">Faltan: <strong>${p.missing}</strong></span>
+          ${minChip}
+        </div>
+
+        ${packageNote}
+      </article>`;
   }).join('');
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${reportTitle} — ${esc(sec.name)}</title>
   <style>
-    @page{size:A4;margin:12mm}
-    *{box-sizing:border-box}
-    body{font-family:Arial,sans-serif;margin:0;color:#1e293b;background:#fff}
-    .hdr{background:${headerBg};color:#fff;padding:18px 20px;border-radius:10px;margin-bottom:14px}
-    .hdr h1{margin:0;font-size:18px;line-height:1.25}
-    .hdr p{margin:5px 0 0;opacity:.72;font-size:12px}
-    .summary{display:flex;gap:10px;align-items:center;margin:0 0 16px}
-    .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:#fef2f2;color:#dc2626;font-size:12px;font-weight:700}
-    .total{font-size:12px;color:#64748b}
-    table{width:100%;border-collapse:collapse;font-size:13px}
-    thead{background:#f1f5f9}
-    th,td{padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:middle}
-    th.n,td.n{color:#94a3b8;width:34px;text-align:center}
-    th.pic,td.pic{width:72px}
-    .thumb{width:58px;height:58px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden}
-    .thumb img{width:100%;height:100%;object-fit:contain}
-    .no-img{width:100%;height:100%;align-items:center;justify-content:center;font-size:24px;color:#cbd5e1}
-    .prod-name{font-weight:700;line-height:1.25}
-    .prod-meta{font-size:11px;color:#64748b;margin-top:4px}
-    th.miss,td.miss{width:72px;text-align:center}
-    td.miss{font-weight:800;font-size:18px;color:#dc2626}
-    td.miss small{display:block;font-size:10px;line-height:1;color:#64748b;margin-top:2px;font-weight:700}
-    tr:nth-child(even){background:#f8fafc}
-    tr{break-inside:avoid;page-break-inside:avoid}
-    .foot{margin-top:16px;font-size:11px;color:#94a3b8;text-align:center}
-    @media print{body{padding:0}.hdr{border-radius:0}}
+    /* Formato angosto tipo ticket para que el PDF se lea bien en celular.
+       En vez de A4 + tabla, se imprime en páginas de 100mm de ancho con tarjetas. */
+    @page{size:100mm 180mm;margin:5mm}
+    *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    html{font-size:16px}
+    body{font-family:Arial,sans-serif;margin:0;color:#0f172a;background:#fff}
+    .report{width:100%;max-width:90mm;margin:0 auto}
+
+    .hdr{background:${headerBg};color:#fff;padding:14px 14px 13px;border-radius:14px;margin-bottom:10px}
+    .hdr h1{margin:0;font-size:16px;line-height:1.2}
+    .hdr p{margin:5px 0 0;opacity:.78;font-size:11px}
+
+    .summary{display:grid;grid-template-columns:1fr;gap:6px;margin:0 0 10px}
+    .pill{display:inline-flex;align-items:center;gap:6px;width:max-content;max-width:100%;padding:6px 10px;border-radius:999px;background:${accentBg};color:${accentText};border:1px solid ${accentBorder};font-size:11px;font-weight:800}
+    .total{font-size:10.5px;color:#64748b}
+
+    .item-card{border:1px solid #e2e8f0;border-radius:14px;padding:10px;margin-bottom:9px;background:#fff;break-inside:avoid;page-break-inside:avoid;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+    .item-head{display:flex;gap:10px;align-items:flex-start}
+
+    /* Imagen más grande para identificar mejor el producto en el PDF móvil. */
+    .thumb{width:82px;height:82px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 82px}
+    .thumb img{width:100%;height:100%;object-fit:contain;padding:2px}
+    .no-img{width:100%;height:100%;align-items:center;justify-content:center;font-size:32px;color:#cbd5e1}
+
+    .item-copy{flex:1;min-width:0;padding-top:1px}
+    .item-number{font-size:10px;color:#94a3b8;font-weight:800;margin-bottom:3px}
+    .item-copy h2{margin:0;font-size:13.5px;line-height:1.22;color:#0f172a}
+
+    .order-inline{display:inline-flex;align-items:baseline;gap:7px;background:${accentBg};border:1px solid ${accentBorder};border-radius:999px;padding:5px 9px;margin-top:8px;color:${accentText}}
+    .order-label{font-size:10px;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
+    .order-value{font-size:22px;font-weight:900;line-height:1;color:#dc2626}
+    .order-value small{font-size:10px;margin-left:2px;color:#64748b;font-weight:800}
+
+    .meta-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+    .chip{font-size:10.5px;line-height:1.15;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:4px 7px}
+    .package-note{margin-top:6px;font-size:10.5px;line-height:1.3;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:6px 8px}
+
+    .foot{margin-top:12px;font-size:10px;line-height:1.35;color:#94a3b8;text-align:center}
+
+    @media screen{
+      body{background:#e2e8f0;padding:12px}
+      .report{background:#fff;border-radius:16px;padding:10px;box-shadow:0 6px 24px rgba(15,23,42,.14)}
+    }
+    @media print{
+      body{background:#fff;padding:0}
+      .report{padding:0;box-shadow:none}
+      .item-card{box-shadow:none}
+    }
   </style></head><body>
-    <div class="hdr">
-      <h1>${isPedidos ? '🛍️' : '📋'} ${reportTitle} — ${esc(sec.name)}</h1>
-      <p>${date} &nbsp;·&nbsp; ${m.length} producto(s)</p>
-    </div>
-    <div class="summary">
-      <span class="pill">⚠️ ${badgeText}</span>
-      <span class="total">Reporte generado desde Anaqueles Pro</span>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th class="n">#</th>
-          <th class="pic">Imagen</th>
-          <th>Producto</th>
-          <th class="miss">${isPedidos ? 'Pedir' : 'Surtir'}</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div class="foot">Usa “Guardar como PDF” en el diálogo de impresión para exportarlo.</div>
+    <main class="report">
+      <div class="hdr">
+        <h1>${isPedidos ? '🛍️' : '📋'} ${reportTitle}</h1>
+        <p>${esc(sec.name)} · ${date} · ${m.length} producto(s)</p>
+      </div>
+
+      <div class="summary">
+        <span class="pill">⚠️ ${badgeText}</span>
+        <span class="total">Reporte generado desde Anaqueles Pro</span>
+      </div>
+
+      ${rows}
+
+      <div class="foot">Usa “Guardar como PDF” en el diálogo de impresión para exportarlo.</div>
+    </main>
+
     <script>
       (function(){
         let printed = false;
