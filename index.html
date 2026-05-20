@@ -286,20 +286,41 @@
       margin-bottom: 14px; font-family: var(--mono);
     }
 
-    .count-box {
-      font-family: var(--mono); font-size: 3.2rem; font-weight: 500;
-      letter-spacing: .04em; min-width: 130px; text-align: center;
-      padding: 10px 28px; border-radius: 12px;
-      background: rgba(255,255,255,.07);
+    .count-fields {
+      display: flex; gap: 10px; width: 100%; max-width: 360px;
+      align-items: stretch; justify-content: center;
+    }
+    .count-field {
+      font-family: var(--font); flex: 1; min-width: 0;
+      padding: 10px 12px 12px; border-radius: 12px;
+      background: rgba(255,255,255,.07); color: #fff;
       border: 2px solid rgba(255,255,255,.12);
-      transition: border-color .15s, color .15s;
-      line-height: 1;
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      cursor: pointer; transition: border-color .15s, color .15s, background .15s, transform .08s;
+      -webkit-user-select: none; user-select: none;
     }
-    .count-box.active {
-      border-color: var(--yellow);
-      color: var(--yellow);
+    .count-field:active { transform: scale(.97); }
+    .count-field-label {
+      font-size: .68rem; font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase; color: rgba(255,255,255,.45);
     }
-    .count-box.zero { color: rgba(255,255,255,.2); }
+    .count-field-value {
+      font-family: var(--mono); font-size: 2.55rem; font-weight: 500;
+      letter-spacing: .04em; line-height: 1; min-height: 2.55rem;
+    }
+    .count-field.active { border-color: var(--yellow); }
+    .count-field.active .count-field-value { color: var(--yellow); }
+    .count-field.zero .count-field-value { color: rgba(255,255,255,.2); }
+    .count-field-change {
+      background: rgba(220,38,38,.14);
+      border-color: rgba(248,113,113,.38);
+    }
+    .count-field-change .count-field-label { color: #fca5a5; }
+    .count-field-change .count-field-value { color: #f87171; }
+    .count-field-change.active { border-color: #f87171; background: rgba(220,38,38,.22); }
+    .count-field-change.active .count-field-value { color: #fecaca; }
+    .count-fields.single .count-field-change { display: none; }
+    .count-fields.single .count-field-stock { max-width: 180px; flex: 0 1 180px; }
 
     /* ─── KEYPAD ─────────────────────────────────────────────── */
     .keypad-area {
@@ -377,6 +398,14 @@
       display: flex; align-items: center; justify-content: center;
       font-family: var(--mono); font-size: 1.3rem; font-weight: 500;
     }
+    .results-section-title {
+      font-size: .78rem; font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); margin: 18px 0 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .results-section-title:first-child { margin-top: 0; }
+    .results-section-title.changes { color: var(--red); }
+    .missing-qty.change { background: var(--red); }
 
     .ok-state { text-align: center; padding: 48px 20px; }
     .ok-state .ok-icon { font-size: 5rem; margin-bottom: 16px; }
@@ -504,6 +533,7 @@
     .fade-up { animation: fadeUp .35s ease both; }
     .fade-up-2 { animation: fadeUp .35s .08s ease both; }
     .fade-up-3 { animation: fadeUp .35s .16s ease both; }
+    .fade-up-4 { animation: fadeUp .35s .24s ease both; }
 
     /* ─── MODE SELECTOR SCREEN ───────────────────────────────── */
     #screen-mode {
@@ -542,6 +572,9 @@
     .mode-card.pedidos {
       background: linear-gradient(135deg, #b45309 0%, #d97706 60%, #f59e0b 100%);
     }
+    .mode-card.inventario {
+      background: linear-gradient(135deg, #047857 0%, #059669 60%, #10b981 100%);
+    }
 
     .mode-card-icon {
       width: 56px; height: 56px; border-radius: 14px; flex-shrink: 0;
@@ -579,6 +612,14 @@
       <div class="mode-card-info">
         <div class="mode-card-title">Pedidos</div>
         <div class="mode-card-sub">Gestión y seguimiento de pedidos a proveedores</div>
+      </div>
+      <div class="mode-card-arrow">›</div>
+    </button>
+    <button class="mode-card inventario fade-up-4" onclick="selectMode('inventario')">
+      <div class="mode-card-icon">⚡</div>
+      <div class="mode-card-info">
+        <div class="mode-card-title">Inventario rápido</div>
+        <div class="mode-card-sub">Conteo rápido con reporte de faltantes</div>
       </div>
       <div class="mode-card-arrow">›</div>
     </button>
@@ -684,7 +725,16 @@
     </div>
     <div class="prod-name" id="ci-name">—</div>
     <div class="prod-req" id="ci-req">Req: —</div>
-    <div class="count-box zero" id="ci-box">0</div>
+    <div class="count-fields single" id="count-fields">
+      <button type="button" class="count-field count-field-change zero" id="ci-change-wrap" onclick="selectCountField('change')">
+        <span class="count-field-label">Cambios</span>
+        <span class="count-field-value" id="ci-change-box">0</span>
+      </button>
+      <button type="button" class="count-field count-field-stock active zero" id="ci-stock-wrap" onclick="selectCountField('stock')">
+        <span class="count-field-label">Existencias</span>
+        <span class="count-field-value" id="ci-box">0</span>
+      </button>
+    </div>
   </div>
 
   <div class="keypad-area">
@@ -787,13 +837,14 @@ async function dbClear(store) {
    APP STATE
 ═══════════════════════════════════════════════════════════ */
 const S = {
-  mode:         'anaqueles',  // 'anaqueles' | 'pedidos'
+  mode:         'anaqueles',  // 'anaqueles' | 'pedidos' | 'inventario'
   sections:     [],   // filtered by current mode
   sessions:     [],   // filtered by current mode
   // per-mode config: { webAppUrl, lastSynced }
   configs: {
-    anaqueles: { webAppUrl: '', lastSynced: null },
-    pedidos:   { webAppUrl: '', lastSynced: null }
+    anaqueles:  { webAppUrl: '', lastSynced: null },
+    pedidos:    { webAppUrl: '', lastSynced: null },
+    inventario: { webAppUrl: '', lastSynced: null }
   },
 
   // counting
@@ -801,19 +852,52 @@ const S = {
   products:      [],
   idx:           0,
   entered:       '',
+  changeEntered: '',
+  activeCountField: 'stock',
   counts:        [],
+  changes:       [],
 
   // import
   pending: [],
 
   // results
-  missing: []
+  missing: [],
+  changesList: []
 };
 
 // Shorthand: always refers to the active mode's config
 Object.defineProperty(S, 'config', {
   get() { return S.configs[S.mode]; }
 });
+
+/* ═══════════════════════════════════════════════════════════
+   MODE HELPERS
+═══════════════════════════════════════════════════════════ */
+const MODES = ['anaqueles', 'pedidos', 'inventario'];
+
+function modeLabel(mode = S.mode) {
+  if (mode === 'pedidos') return 'Pedidos';
+  if (mode === 'inventario') return 'Inventario rápido';
+  return 'Anaqueles';
+}
+function modeEmoji(mode = S.mode) {
+  if (mode === 'pedidos') return '📋';
+  if (mode === 'inventario') return '⚡';
+  return '🛒';
+}
+function modeSectionTitle(mode = S.mode) {
+  if (mode === 'pedidos') return 'Listas de pedidos';
+  if (mode === 'inventario') return 'Secciones de inventario';
+  return 'Secciones del anaquel';
+}
+function pendingTileIcon(mode = S.mode) {
+  if (mode === 'pedidos') return '📋';
+  if (mode === 'inventario') return '⚡';
+  return '🧮';
+}
+function modeProgressWord(mode = S.mode) {
+  return mode === 'pedidos' ? 'Lista(s)' : 'Sección(es)';
+}
 
 /* ═══════════════════════════════════════════════════════════
    DB HELPER — delete all records of a given mode
@@ -857,9 +941,9 @@ function renderHome() {
   nav('home');
 
   // Update appbar title to reflect active mode
-  const modeLabel = S.mode === 'pedidos' ? 'Pedidos' : 'Anaqueles';
-  const modeEmoji = S.mode === 'pedidos' ? '📋' : '🛒';
-  document.getElementById('home-title').textContent = modeLabel;
+  const label = modeLabel();
+  const emoji = modeEmoji();
+  document.getElementById('home-title').textContent = label;
 
   const today = todayStr();
   const doneSectionIds = new Set(
@@ -893,7 +977,7 @@ function renderHome() {
   if (S.sections.length === 0) {
     el.innerHTML = syncCard + `
       <div class="empty-state fade-up-2">
-        <div class="icon">${modeEmoji}</div>
+        <div class="icon">${emoji}</div>
         <h2>Sin catálogo</h2>
         <p>${hasUrl
           ? 'Toca <strong>Sync</strong> para descargar tu catálogo desde Google Sheets.'
@@ -909,7 +993,7 @@ function renderHome() {
   const r = 24, circ = 2 * Math.PI * r;
   const offset = circ * (1 - pct / 100);
 
-  const sectionWord = S.mode === 'pedidos' ? 'Lista(s)' : 'Sección(es)';
+  const sectionWord = modeProgressWord();
 
   let html = syncCard + `
     <div class="progress-strip fade-up-2">
@@ -931,7 +1015,7 @@ function renderHome() {
     </div>
 
     <div class="reset-row fade-up-2">
-      <h2 class="sec" style="margin-bottom:0">${S.mode === 'pedidos' ? 'Listas de pedidos' : 'Secciones del anaquel'}</h2>
+      <h2 class="sec" style="margin-bottom:0">${modeSectionTitle()}</h2>
       <button class="btn-reset" onclick="confirmResetProgress()">↺ Reiniciar día</button>
     </div>
 
@@ -943,7 +1027,7 @@ function renderHome() {
     html += `
       <div class="shelf-tile ${isDone ? 'done' : 'pending'}" onclick="startCount('${sec.id}')">
         ${isDone ? `<div class="shelf-tile-check">✓</div>` : ''}
-        <div class="shelf-tile-icon">${isDone ? '✅' : (S.mode === 'pedidos' ? '📋' : '🧮')}</div>
+        <div class="shelf-tile-icon">${isDone ? '✅' : pendingTileIcon()}</div>
         <div class="shelf-tile-name">${esc(sec.name)}</div>
         <div class="shelf-tile-sub">${sec.products.length} productos</div>
       </div>`;
@@ -1064,11 +1148,11 @@ async function testConnection() {
 }
 
 function populateSettings() {
-  const modeLabel = S.mode === 'pedidos' ? 'Pedidos' : 'Anaqueles';
-  document.getElementById('settings-title').textContent = `Configuración — ${modeLabel}`;
-  document.getElementById('settings-sync-label').textContent = `Sincronización — ${modeLabel}`;
-  document.getElementById('settings-import-label').textContent = `Importar Excel — ${modeLabel}`;
-  document.getElementById('settings-delete-label').textContent = `Borrar catálogo de ${modeLabel}`;
+  const label = modeLabel();
+  document.getElementById('settings-title').textContent = `Configuración — ${label}`;
+  document.getElementById('settings-sync-label').textContent = `Sincronización — ${label}`;
+  document.getElementById('settings-import-label').textContent = `Importar Excel — ${label}`;
+  document.getElementById('settings-delete-label').textContent = `Borrar catálogo de ${label}`;
 
   const input = document.getElementById('webapp-url-input');
   input.value = S.config.webAppUrl || '';
@@ -1088,8 +1172,8 @@ function populateSettings() {
 }
 
 async function deleteCatalog() {
-  const modeLabel = S.mode === 'pedidos' ? 'Pedidos' : 'Anaqueles';
-  if (!confirm(`¿Borrar el catálogo de ${modeLabel}? Las sesiones no se afectan.`)) return;
+  const label = modeLabel();
+  if (!confirm(`¿Borrar el catálogo de ${label}? Las sesiones no se afectan.`)) return;
   await dbDelByMode('sections', S.mode);
   S.sections = [];
   toast('Catálogo borrado', 2000);
@@ -1253,7 +1337,10 @@ function startCount(sectionId) {
   S.products = [...sec.products];
   S.idx = 0;
   S.entered = '';
+  S.changeEntered = '';
+  S.activeCountField = 'stock';
   S.counts = [];
+  S.changes = [];
 
   nav('count');
   renderProduct();
@@ -1279,9 +1366,12 @@ function renderProduct() {
     ? `Requeridos: ${p.required} · Reportar desde: ${minMissing}${packageInfo}`
     : `Requeridos: ${p.required}${packageInfo}`;
 
-  // Restore saved count for this product if navigating back
+  // Restore saved values for this product if navigating back.
   const saved = S.counts[S.idx];
+  const savedChange = S.changes[S.idx];
   S.entered = saved !== undefined ? (saved === 0 ? '' : String(saved)) : '';
+  S.changeEntered = savedChange !== undefined ? (savedChange === 0 ? '' : String(savedChange)) : '';
+  S.activeCountField = 'stock'; // Existencias is always selected by default.
   updateBox();
 
   // Next / Finish label
@@ -1291,27 +1381,58 @@ function renderProduct() {
   btn.className = 'key key-next' + (isLast ? ' last' : '');
 }
 
+function selectCountField(field) {
+  if (field === 'change' && S.mode !== 'pedidos') return;
+  S.activeCountField = field === 'change' ? 'change' : 'stock';
+  updateBox();
+}
+
 function kp(digit) {
+  const target = (S.mode === 'pedidos' && S.activeCountField === 'change') ? 'change' : 'stock';
+  let val = target === 'change' ? S.changeEntered : S.entered;
+
   if (digit === '⌫') {
-    S.entered = S.entered.slice(0, -1);
+    val = val.slice(0, -1);
   } else {
-    if (S.entered.length >= 3) return; // cap at 999
-    S.entered += digit;
+    if (val.length >= 3) return; // cap at 999
+    val += digit;
   }
+
+  if (target === 'change') S.changeEntered = val;
+  else S.entered = val;
+
   updateBox();
 }
 
 function updateBox() {
-  const el = document.getElementById('ci-box');
-  if (S.entered === '') {
-    el.textContent = '0'; el.className = 'count-box zero';
-  } else {
-    el.textContent = S.entered; el.className = 'count-box active';
-  }
+  const isPedidos = S.mode === 'pedidos';
+  const fields = document.getElementById('count-fields');
+  const stockWrap = document.getElementById('ci-stock-wrap');
+  const changeWrap = document.getElementById('ci-change-wrap');
+  const stockBox = document.getElementById('ci-box');
+  const changeBox = document.getElementById('ci-change-box');
+
+  if (!isPedidos) S.activeCountField = 'stock';
+
+  fields.className = 'count-fields ' + (isPedidos ? 'pedidos' : 'single');
+
+  stockBox.textContent = S.entered === '' ? '0' : S.entered;
+  changeBox.textContent = S.changeEntered === '' ? '0' : S.changeEntered;
+
+  stockWrap.className = 'count-field count-field-stock'
+    + (S.activeCountField === 'stock' ? ' active' : '')
+    + (S.entered === '' ? ' zero' : '');
+
+  changeWrap.className = 'count-field count-field-change'
+    + (S.activeCountField === 'change' ? ' active' : '')
+    + (S.changeEntered === '' ? ' zero' : '');
 }
 
 function saveCurrentCount() {
   S.counts[S.idx] = S.entered === '' ? 0 : parseInt(S.entered, 10);
+  S.changes[S.idx] = (S.mode === 'pedidos' && S.changeEntered !== '')
+    ? parseInt(S.changeEntered, 10)
+    : 0;
 }
 
 function prevProduct() {
@@ -1334,6 +1455,7 @@ function nextProduct() {
 async function finishCount() {
   const session = buildSession();
   S.missing = session.counts.filter(c => c.shouldRestock);
+  S.changesList = S.mode === 'pedidos' ? session.counts.filter(c => c.hasChange) : [];
 
   try {
     await dbPut('sessions', session);
@@ -1359,7 +1481,7 @@ async function confirmResetProgress() {
   const today = todayStr();
   const count = S.sessions.filter(s => s.date === today).length;
   if (count === 0) { toast('No hay progreso de hoy que reiniciar', 2000); return; }
-  if (!confirm(`¿Reiniciar el progreso de hoy? Se borrarán ${count} conteo(s) de ${S.mode === 'pedidos' ? 'Pedidos' : 'Anaqueles'}.`)) return;
+  if (!confirm(`¿Reiniciar el progreso de hoy? Se borrarán ${count} conteo(s) de ${modeLabel()}.`)) return;
 
   const toDelete = S.sessions.filter(s => s.date === today);
   for (const s of toDelete) await dbDel('sessions', s.id);
@@ -1372,6 +1494,7 @@ async function confirmResetProgress() {
 function buildSession() {
   const counts = S.products.map((p, i) => {
     const counted = S.counts[i] ?? 0;
+    const changeQty = S.mode === 'pedidos' ? (S.changes[i] ?? 0) : 0;
     const missing = Math.max(0, p.required - counted);
     const minMissing = normalizeMinMissing(p.minMissing);
     const packageSize = normalizePackageSize(p.packageSize);
@@ -1379,7 +1502,7 @@ function buildSession() {
       ? calcOrderForPackage(missing, packageSize)
       : { packages: missing, pieces: missing, packageSize: 1 };
 
-    // Anaqueles reporta piezas faltantes. Pedidos reporta paquetes calculados,
+    // Anaqueles / Inventario reportan piezas faltantes. Pedidos reporta paquetes calculados,
     // y cuando el redondeo da 0 paquetes no se agrega al pedido.
     const shouldRestock = S.mode === 'pedidos'
       ? missing >= minMissing && (packageSize > 1 ? order.packages > 0 : missing > 0)
@@ -1387,6 +1510,7 @@ function buildSession() {
 
     return { productId: p.id, name: p.name, imageUrl: p.imageUrl,
              required: p.required, counted, missing, minMissing, packageSize,
+             changeQty, hasChange: changeQty > 0,
              orderPackages: order.packages, orderPieces: order.pieces, shouldRestock };
   });
   return {
@@ -1406,54 +1530,87 @@ function buildSession() {
 function renderResults() {
   nav('results');
   const m = S.missing;
+  const changes = S.changesList || [];
   const sec = S.activeSection;
+  const isPedidos = S.mode === 'pedidos';
+  const hasReportItems = m.length > 0 || changes.length > 0;
   const dateStr = new Date().toLocaleDateString('es-MX',
     { day: 'numeric', month: 'long', year: 'numeric' });
+
+  let headline;
+  if (isPedidos) {
+    if (changes.length && m.length) headline = `${changes.length} cambio(s) · ${m.length} producto(s) pedido`;
+    else if (changes.length) headline = `${changes.length} cambio(s) registrado(s)`;
+    else if (m.length) headline = `${m.length} producto(s) pedido`;
+    else headline = 'Todo en orden';
+  } else {
+    headline = m.length ? `${m.length} productos faltantes` : 'Todo en orden';
+  }
 
   // Hero
   document.getElementById('res-hero').innerHTML = `
     <div class="section-tag">${esc(sec.name)}</div>
-    <div class="headline">${m.length ? `${m.length} productos faltantes` : 'Todo en orden'}</div>
+    <div class="headline">${headline}</div>
     <div class="sub">${dateStr}</div>
-    ${m.length
-      ? `<div><span class="missing-pill">⚠️ Productos a surtir</span></div>`
-      : `<div><span class="ok-pill">✅ Anaquel completo</span></div>`}
+    ${hasReportItems
+      ? `<div><span class="missing-pill">⚠️ ${isPedidos ? 'Reporte de pedidos' : 'Productos a surtir'}</span></div>`
+      : `<div><span class="ok-pill">✅ Todo completo</span></div>`}
   `;
 
   // Body
   const body = document.getElementById('res-body');
-  if (m.length === 0) {
+  if (!hasReportItems) {
     body.innerHTML = `
       <div class="ok-state">
         <div class="ok-icon">🎉</div>
         <h2>¡Perfecto!</h2>
-        <p>Todos los productos están en las cantidades requeridas.</p>
+        <p>${isPedidos ? 'No hay cambios ni productos por pedir.' : 'Todos los productos están en las cantidades requeridas.'}</p>
       </div>`;
   } else {
-    const isPedidos = S.mode === 'pedidos';
-    body.innerHTML = m.map(p => {
-      const packageSize = normalizePackageSize(p.packageSize);
-      const qtyMain = isPedidos && packageSize > 1 ? p.orderPackages : p.missing;
-      const qtyLabel = isPedidos && packageSize > 1 ? 'paq' : 'pz';
-      const packageText = isPedidos && packageSize > 1
-        ? ` &nbsp;·&nbsp; Paquete: ${packageSize} pz &nbsp;·&nbsp; Pedir: ${p.orderPieces} pz`
-        : '';
-      return `
-      <div class="missing-card">
-        <img class="missing-thumb" src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
-             onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
-        <div class="missing-info">
-          <div class="missing-name">${esc(p.name)}</div>
-          <div class="missing-detail">Hay: ${p.counted} &nbsp;·&nbsp; Req: ${p.required} &nbsp;·&nbsp; Faltan: ${p.missing}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}${packageText}</div>
-        </div>
-        <div class="missing-qty" title="${qtyLabel}">${qtyMain}<span style="font-size:.58rem;margin-left:2px">${qtyLabel}</span></div>
-      </div>`;
-    }).join('');
+    let html = '';
+
+    if (isPedidos && changes.length) {
+      html += `<div class="results-section-title changes">↩ Cambios</div>`;
+      html += changes.map(p => `
+        <div class="missing-card">
+          <img class="missing-thumb" src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
+               onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
+          <div class="missing-info">
+            <div class="missing-name">${esc(p.name)}</div>
+            <div class="missing-detail">Cambio/devolución: ${p.changeQty} pz &nbsp;·&nbsp; Hay: ${p.counted} &nbsp;·&nbsp; Req: ${p.required}</div>
+          </div>
+          <div class="missing-qty change" title="pz">${p.changeQty}<span style="font-size:.58rem;margin-left:2px">pz</span></div>
+        </div>`).join('');
+    }
+
+    if (m.length) {
+      if (isPedidos) html += `<div class="results-section-title">📦 Pedido</div>`;
+      html += m.map(p => {
+        const packageSize = normalizePackageSize(p.packageSize);
+        const qtyMain = isPedidos && packageSize > 1 ? p.orderPackages : p.missing;
+        const qtyLabel = isPedidos && packageSize > 1 ? 'paq' : 'pz';
+        const packageText = isPedidos && packageSize > 1
+          ? ` &nbsp;·&nbsp; Paquete: ${packageSize} pz &nbsp;·&nbsp; Pedir: ${p.orderPieces} pz`
+          : '';
+        return `
+        <div class="missing-card">
+          <img class="missing-thumb" src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
+               onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
+          <div class="missing-info">
+            <div class="missing-name">${esc(p.name)}</div>
+            <div class="missing-detail">Hay: ${p.counted} &nbsp;·&nbsp; Req: ${p.required} &nbsp;·&nbsp; Faltan: ${p.missing}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}${packageText}</div>
+          </div>
+          <div class="missing-qty" title="${qtyLabel}">${qtyMain}<span style="font-size:.58rem;margin-left:2px">${qtyLabel}</span></div>
+        </div>`;
+      }).join('');
+    }
+
+    body.innerHTML = html;
   }
 
   // Actions
   const actions = document.getElementById('res-actions');
-  if (m.length) {
+  if (hasReportItems) {
     actions.innerHTML = `
       <div class="row-btns">
         <button class="btn btn-blue" onclick="makePDF()">📄 PDF</button>
@@ -1471,66 +1628,105 @@ function renderResults() {
 ═══════════════════════════════════════════════════════════ */
 function makePDF() {
   const m = S.missing;
+  const changes = S.changesList || [];
   const sec = S.activeSection;
   const isPedidos = S.mode === 'pedidos';
+  const totalItems = isPedidos ? (m.length + changes.length) : m.length;
   const reportTitle = isPedidos ? 'Pedido a Proveedor' : 'Productos Faltantes';
-  const badgeText = isPedidos ? 'Productos solicitados' : 'Productos a surtir';
+  const badgeText = isPedidos ? 'Cambios y productos solicitados' : 'Productos a surtir';
   const headerBg = isPedidos ? '#b45309' : '#1e293b';
   const accentBg = isPedidos ? '#fffbeb' : '#fef2f2';
   const accentBorder = isPedidos ? '#fde68a' : '#fecaca';
   const accentText = isPedidos ? '#92400e' : '#991b1b';
   const filePrefix = isPedidos ? 'pedido' : 'faltantes';
-  const qtyLabelText = isPedidos ? 'Pedir' : 'Surtir';
   const date = new Date().toLocaleDateString('es-MX',
     { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-  const rows = m.map((p, i) => {
+  function productImageMarkup(p) {
     const hasImg = !!p.imageUrl;
-    const packageSize = normalizePackageSize(p.packageSize);
-    const usePackages = isPedidos && packageSize > 1;
-    const qtyMain = usePackages ? p.orderPackages : p.missing;
-    const qtyUnit = usePackages ? 'paq' : 'pz';
-    const minChip = p.minMissing > 1
-      ? `<span class="chip">Min: <strong>${p.minMissing}</strong></span>`
-      : '';
-    const packageNote = usePackages
-      ? `<div class="package-note">Paquete: <strong>${packageSize} pz</strong> · Pedir equivale a <strong>${p.orderPieces} pz</strong></div>`
-      : '';
     const imageMarkup = hasImg
       ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
           loading="eager" decoding="sync"
           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
       : '';
-
     return `
-      <article class="item-card">
-        <div class="item-head">
-          <div class="thumb">
-            ${imageMarkup}
-            <span class="no-img" style="${hasImg ? 'display:none' : 'display:flex'}">📦</span>
-          </div>
+      <div class="thumb">
+        ${imageMarkup}
+        <span class="no-img" style="${hasImg ? 'display:none' : 'display:flex'}">📦</span>
+      </div>`;
+  }
 
+  function changeRows() {
+    if (!isPedidos || !changes.length) return '';
+    return `<div class="section-title change">↩ Cambios</div>` + changes.map((p, i) => `
+      <article class="item-card change-card">
+        <div class="item-head">
+          ${productImageMarkup(p)}
           <div class="item-copy">
             <div class="item-number">#${i + 1}</div>
             <h2>${esc(p.name)}</h2>
-
-            <div class="order-inline">
-              <span class="order-label">${qtyLabelText}</span>
-              <span class="order-value">${qtyMain}<small>${qtyUnit}</small></span>
+            <div class="order-inline change-inline">
+              <span class="order-label">Cambio</span>
+              <span class="order-value">${p.changeQty}<small>pz</small></span>
             </div>
           </div>
         </div>
-
         <div class="meta-row">
           <span class="chip">Hay: <strong>${p.counted}</strong></span>
           <span class="chip">Req: <strong>${p.required}</strong></span>
           <span class="chip">Faltan: <strong>${p.missing}</strong></span>
-          ${minChip}
         </div>
+      </article>`).join('');
+  }
 
-        ${packageNote}
-      </article>`;
-  }).join('');
+  function orderRows() {
+    if (!m.length) return '';
+    const title = isPedidos ? `<div class="section-title order">📦 Pedido</div>` : '';
+    return title + m.map((p, i) => {
+      const packageSize = normalizePackageSize(p.packageSize);
+      const usePackages = isPedidos && packageSize > 1;
+      const qtyMain = usePackages ? p.orderPackages : p.missing;
+      const qtyUnit = usePackages ? 'paq' : 'pz';
+      const qtyLabelText = isPedidos ? 'Pedir' : 'Surtir';
+      const minChip = p.minMissing > 1
+        ? `<span class="chip">Min: <strong>${p.minMissing}</strong></span>`
+        : '';
+      const packageNote = usePackages
+        ? `<div class="package-note">Paquete: <strong>${packageSize} pz</strong> · Pedir equivale a <strong>${p.orderPieces} pz</strong></div>`
+        : '';
+
+      return `
+        <article class="item-card">
+          <div class="item-head">
+            ${productImageMarkup(p)}
+
+            <div class="item-copy">
+              <div class="item-number">#${i + 1}</div>
+              <h2>${esc(p.name)}</h2>
+
+              <div class="order-inline">
+                <span class="order-label">${qtyLabelText}</span>
+                <span class="order-value">${qtyMain}<small>${qtyUnit}</small></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="meta-row">
+            <span class="chip">Hay: <strong>${p.counted}</strong></span>
+            <span class="chip">Req: <strong>${p.required}</strong></span>
+            <span class="chip">Faltan: <strong>${p.missing}</strong></span>
+            ${minChip}
+          </div>
+
+          ${packageNote}
+        </article>`;
+    }).join('');
+  }
+
+  const rows = changeRows() + orderRows();
+  const summaryText = isPedidos
+    ? `${changes.length} cambio(s) · ${m.length} producto(s) solicitado(s)`
+    : `${m.length} producto(s)`;
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1553,7 +1749,12 @@ function makePDF() {
     .pill{display:inline-flex;align-items:center;gap:6px;width:max-content;max-width:100%;padding:5px 10px;border-radius:999px;background:${accentBg};color:${accentText};border:1px solid ${accentBorder};font-size:12px;font-weight:900}
     .total{font-size:11px;color:#64748b;text-align:right}
 
+    .section-title{font-size:13px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin:9px 0 6px;padding:6px 9px;border-radius:9px;background:#f8fafc;border:1px solid #e2e8f0;color:#334155;break-after:avoid;page-break-after:avoid}
+    .section-title.change{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+    .section-title.order{background:#fffbeb;border-color:#fde68a;color:#92400e}
+
     .item-card{border:1px solid #dbe4ef;border-radius:12px;padding:8px 9px;margin-bottom:6px;background:#fff;break-inside:avoid;page-break-inside:avoid;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+    .item-card.change-card{border-color:#fecaca}
     .item-head{display:flex;gap:11px;align-items:flex-start}
 
     /* Imagen grande pero compacta: aprovecha A4 sin dejar solo 3 productos por hoja. */
@@ -1566,6 +1767,7 @@ function makePDF() {
     .item-copy h2{margin:0;font-size:17px;line-height:1.18;color:#0f172a;letter-spacing:-.01em}
 
     .order-inline{display:inline-flex;align-items:baseline;gap:8px;background:${accentBg};border:1px solid ${accentBorder};border-radius:999px;padding:5px 10px;margin-top:7px;color:${accentText}}
+    .order-inline.change-inline{background:#fef2f2;border-color:#fecaca;color:#991b1b}
     .order-label{font-size:11px;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
     .order-value{font-size:25px;font-weight:900;line-height:1;color:#dc2626}
     .order-value small{font-size:11px;margin-left:3px;color:#64748b;font-weight:900}
@@ -1589,7 +1791,7 @@ function makePDF() {
     <main class="report">
       <div class="hdr">
         <h1>${isPedidos ? '🛍️' : '📋'} ${reportTitle}</h1>
-        <p>${esc(sec.name)} · ${date} · ${m.length} producto(s)</p>
+        <p>${esc(sec.name)} · ${date} · ${summaryText}</p>
       </div>
 
       <div class="summary">
@@ -1597,7 +1799,7 @@ function makePDF() {
         <span class="total">Reporte generado desde Anaqueles Pro</span>
       </div>
 
-      ${rows}
+      ${rows || '<p>No hay productos para reportar.</p>'}
 
       <div class="foot">Usa “Guardar como PDF” en el diálogo de impresión para exportarlo.</div>
     </main>
@@ -1677,7 +1879,8 @@ function sendWA_Anaqueles() {
 }
 
 function sendWA_Pedidos() {
-  const m   = S.missing;
+  const m = S.missing;
+  const changes = S.changesList || [];
   const sec = S.activeSection;
   const date = new Date().toLocaleDateString('es-MX',
     { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -1685,16 +1888,29 @@ function sendWA_Pedidos() {
   let txt = `🛍️ *Pedido a Proveedor*\n`;
   txt += `📦 *${sec.name}*  ·  📅 ${date}\n`;
   txt += `━━━━━━━━━━━━━━━━━━━━\n`;
-  m.forEach((p, i) => {
-    const packageSize = normalizePackageSize(p.packageSize);
-    if (packageSize > 1) {
-      txt += `${i + 1}. ${p.name} — *${p.orderPackages} paq.* (${p.orderPieces} pz · paquete ${packageSize})\n`;
-    } else {
-      txt += `${i + 1}. ${p.name} — *${p.missing} pz.*\n`;
-    }
-  });
-  txt += `━━━━━━━━━━━━━━━━━━━━\n`;
-  txt += `_Total: ${m.length} producto(s) solicitado(s)_`;
+
+  if (changes.length) {
+    txt += `↩ *CAMBIOS*\n`;
+    changes.forEach((p, i) => {
+      txt += `${i + 1}. ${p.name} — *${p.changeQty} pz.*\n`;
+    });
+    txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+  }
+
+  if (m.length) {
+    txt += `📦 *PEDIDO*\n`;
+    m.forEach((p, i) => {
+      const packageSize = normalizePackageSize(p.packageSize);
+      if (packageSize > 1) {
+        txt += `${i + 1}. ${p.name} — *${p.orderPackages} paq.* (${p.orderPieces} pz · paquete ${packageSize})\n`;
+      } else {
+        txt += `${i + 1}. ${p.name} — *${p.missing} pz.*\n`;
+      }
+    });
+    txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+  }
+
+  txt += `_Total: ${changes.length} cambio(s) · ${m.length} producto(s) solicitado(s)_`;
 
   window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
 }
@@ -1790,7 +2006,7 @@ async function boot() {
     const cfgRows = await dbAll('config');
     cfgRows.forEach(row => {
       // New namespaced keys: anaqueles_webAppUrl, pedidos_webAppUrl …
-      ['anaqueles', 'pedidos'].forEach(m => {
+      MODES.forEach(m => {
         if (row.key === `${m}_webAppUrl`)  S.configs[m].webAppUrl  = row.value || '';
         if (row.key === `${m}_lastSynced`) S.configs[m].lastSynced = row.value || null;
       });
