@@ -545,6 +545,25 @@
       padding-top: var(--safe-top);
       padding-bottom: var(--safe-bot);
     }
+    .app-version {
+      position: absolute;
+      top: calc(var(--safe-top) + 14px);
+      right: 16px;
+      z-index: 2;
+      font-family: var(--mono);
+      font-size: .72rem;
+      font-weight: 500;
+      color: rgba(255,255,255,.72);
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 999px;
+      padding: 5px 9px;
+      line-height: 1;
+      letter-spacing: .01em;
+      pointer-events: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
     .mode-header {
       text-align: center;
       margin-bottom: 36px;
@@ -593,6 +612,7 @@
      MODE SELECTOR (first screen)
 ══════════════════════════════════════════════════════ -->
 <div class="screen off" id="screen-mode">
+  <div class="app-version" id="app-version">Ver. 1.0.0.1</div>
   <div class="mode-header fade-up">
     <div class="app-logo">🏪</div>
     <h1>Gestión de Tienda</h1>
@@ -836,15 +856,22 @@ async function dbClear(store) {
 /* ═══════════════════════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════════════════════ */
+const APP_VERSION = '1.0.0.1';
+const DEFAULT_WEBAPP_URLS = {
+  anaqueles:  'https://script.google.com/macros/s/AKfycbxSjmd4JFGRHSWtdsEYZbip298KWEtduVfqdpfGee5c2cPK5-mEnAkaeFWGsZvR9RcE/exec',
+  pedidos:    'https://script.google.com/macros/s/AKfycbz6ymKwn4okx0kcaZjXa1mV9oT4JmtR64YbUSPLJQ-5_X6-sfyWKPwoEJsT9SYC-j7KKQ/exec',
+  inventario: 'https://script.google.com/macros/s/AKfycbyQ2cuoZWFCdLu_pd_MAXCiQBL80lLHOwH1f00KdpnHjzfzADay2_wIy8XbPtMP9QlJ/exec'
+};
+
 const S = {
   mode:         'anaqueles',  // 'anaqueles' | 'pedidos' | 'inventario'
   sections:     [],   // filtered by current mode
   sessions:     [],   // filtered by current mode
   // per-mode config: { webAppUrl, lastSynced }
   configs: {
-    anaqueles:  { webAppUrl: '', lastSynced: null },
-    pedidos:    { webAppUrl: '', lastSynced: null },
-    inventario: { webAppUrl: '', lastSynced: null }
+    anaqueles:  { webAppUrl: DEFAULT_WEBAPP_URLS.anaqueles,  lastSynced: null },
+    pedidos:    { webAppUrl: DEFAULT_WEBAPP_URLS.pedidos,    lastSynced: null },
+    inventario: { webAppUrl: DEFAULT_WEBAPP_URLS.inventario, lastSynced: null }
   },
 
   // counting
@@ -1495,7 +1522,10 @@ function buildSession() {
   const counts = S.products.map((p, i) => {
     const counted = S.counts[i] ?? 0;
     const changeQty = S.mode === 'pedidos' ? (S.changes[i] ?? 0) : 0;
-    const missing = Math.max(0, p.required - counted);
+    // En Pedidos, los cambios/devoluciones también son producto disponible,
+    // por eso se suman a las existencias antes de calcular faltantes.
+    const availableQty = S.mode === 'pedidos' ? counted + changeQty : counted;
+    const missing = Math.max(0, p.required - availableQty);
     const minMissing = normalizeMinMissing(p.minMissing);
     const packageSize = normalizePackageSize(p.packageSize);
     const order = S.mode === 'pedidos'
@@ -1509,7 +1539,7 @@ function buildSession() {
       : missing >= minMissing;
 
     return { productId: p.id, name: p.name, imageUrl: p.imageUrl,
-             required: p.required, counted, missing, minMissing, packageSize,
+             required: p.required, counted, availableQty, missing, minMissing, packageSize,
              changeQty, hasChange: changeQty > 0,
              orderPackages: order.packages, orderPieces: order.pieces, shouldRestock };
   });
@@ -1577,7 +1607,7 @@ function renderResults() {
                onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
           <div class="missing-info">
             <div class="missing-name">${esc(p.name)}</div>
-            <div class="missing-detail">Cambio/devolución: ${p.changeQty} pz &nbsp;·&nbsp; Hay: ${p.counted} &nbsp;·&nbsp; Req: ${p.required}</div>
+            <div class="missing-detail">Cambio/devolución: ${p.changeQty} pz &nbsp;·&nbsp; Hay: ${p.counted} &nbsp;·&nbsp; Disponible: ${p.availableQty} &nbsp;·&nbsp; Req: ${p.required}</div>
           </div>
           <div class="missing-qty change" title="pz">${p.changeQty}<span style="font-size:.58rem;margin-left:2px">pz</span></div>
         </div>`).join('');
@@ -1592,13 +1622,16 @@ function renderResults() {
         const packageText = isPedidos && packageSize > 1
           ? ` &nbsp;·&nbsp; Paquete: ${packageSize} pz &nbsp;·&nbsp; Pedir: ${p.orderPieces} pz`
           : '';
+        const availabilityText = isPedidos
+          ? `Hay: ${p.counted}${p.changeQty > 0 ? ` &nbsp;·&nbsp; Cambios: ${p.changeQty}` : ''} &nbsp;·&nbsp; Disponible: ${p.availableQty}`
+          : `Hay: ${p.counted}`;
         return `
         <div class="missing-card">
           <img class="missing-thumb" src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
                onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
           <div class="missing-info">
             <div class="missing-name">${esc(p.name)}</div>
-            <div class="missing-detail">Hay: ${p.counted} &nbsp;·&nbsp; Req: ${p.required} &nbsp;·&nbsp; Faltan: ${p.missing}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}${packageText}</div>
+            <div class="missing-detail">${availabilityText} &nbsp;·&nbsp; Req: ${p.required} &nbsp;·&nbsp; Faltan: ${p.missing}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}${packageText}</div>
           </div>
           <div class="missing-qty" title="${qtyLabel}">${qtyMain}<span style="font-size:.58rem;margin-left:2px">${qtyLabel}</span></div>
         </div>`;
@@ -1673,6 +1706,8 @@ function makePDF() {
         </div>
         <div class="meta-row">
           <span class="chip">Hay: <strong>${p.counted}</strong></span>
+          <span class="chip">Cambios: <strong>${p.changeQty}</strong></span>
+          <span class="chip">Disponible: <strong>${p.availableQty}</strong></span>
           <span class="chip">Req: <strong>${p.required}</strong></span>
           <span class="chip">Faltan: <strong>${p.missing}</strong></span>
         </div>
@@ -1694,6 +1729,11 @@ function makePDF() {
       const packageNote = usePackages
         ? `<div class="package-note">Paquete: <strong>${packageSize} pz</strong> · Pedir equivale a <strong>${p.orderPieces} pz</strong></div>`
         : '';
+      const availabilityChips = isPedidos
+        ? `<span class="chip">Hay: <strong>${p.counted}</strong></span>` +
+          (p.changeQty > 0 ? `<span class="chip">Cambios: <strong>${p.changeQty}</strong></span>` : '') +
+          `<span class="chip">Disponible: <strong>${p.availableQty}</strong></span>`
+        : `<span class="chip">Hay: <strong>${p.counted}</strong></span>`;
 
       return `
         <article class="item-card">
@@ -1712,7 +1752,7 @@ function makePDF() {
           </div>
 
           <div class="meta-row">
-            <span class="chip">Hay: <strong>${p.counted}</strong></span>
+            ${availabilityChips}
             <span class="chip">Req: <strong>${p.required}</strong></span>
             <span class="chip">Faltan: <strong>${p.missing}</strong></span>
             ${minChip}
@@ -1901,10 +1941,11 @@ function sendWA_Pedidos() {
     txt += `📦 *PEDIDO*\n`;
     m.forEach((p, i) => {
       const packageSize = normalizePackageSize(p.packageSize);
+      const changeNote = p.changeQty > 0 ? ` · hay ${p.counted} + cambios ${p.changeQty}` : '';
       if (packageSize > 1) {
-        txt += `${i + 1}. ${p.name} — *${p.orderPackages} paq.* (${p.orderPieces} pz · paquete ${packageSize})\n`;
+        txt += `${i + 1}. ${p.name} — *${p.orderPackages} paq.* (${p.orderPieces} pz · paquete ${packageSize}${changeNote})\n`;
       } else {
-        txt += `${i + 1}. ${p.name} — *${p.missing} pz.*\n`;
+        txt += `${i + 1}. ${p.name} — *${p.missing} pz.*${changeNote ? ` (${changeNote.trim().replace(/^·\s*/, '')})` : ''}\n`;
       }
     });
     txt += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -2007,16 +2048,19 @@ async function boot() {
     cfgRows.forEach(row => {
       // New namespaced keys: anaqueles_webAppUrl, pedidos_webAppUrl …
       MODES.forEach(m => {
-        if (row.key === `${m}_webAppUrl`)  S.configs[m].webAppUrl  = row.value || '';
-        if (row.key === `${m}_lastSynced`) S.configs[m].lastSynced = row.value || null;
+        if (row.key === `${m}_webAppUrl` && row.value)  S.configs[m].webAppUrl  = row.value;
+        if (row.key === `${m}_lastSynced`)              S.configs[m].lastSynced = row.value || null;
       });
       // Back-compat: old non-namespaced key belongs to anaqueles
-      if (row.key === 'webAppUrl')  S.configs.anaqueles.webAppUrl  = S.configs.anaqueles.webAppUrl  || row.value || '';
-      if (row.key === 'lastSynced') S.configs.anaqueles.lastSynced = S.configs.anaqueles.lastSynced || row.value || null;
+      if (row.key === 'webAppUrl' && row.value) S.configs.anaqueles.webAppUrl = row.value;
+      if (row.key === 'lastSynced')             S.configs.anaqueles.lastSynced = S.configs.anaqueles.lastSynced || row.value || null;
     });
   } catch (e) {
     console.warn('DB init failed:', e);
   }
+
+  const versionEl = document.getElementById('app-version');
+  if (versionEl) versionEl.textContent = `Ver. ${APP_VERSION}`;
 
   // Always start at the mode selector
   nav('mode');
