@@ -612,7 +612,7 @@
      MODE SELECTOR (first screen)
 ══════════════════════════════════════════════════════ -->
 <div class="screen off" id="screen-mode">
-  <div class="app-version" id="app-version">Ver. 1.0.0.1</div>
+  <div class="app-version" id="app-version">Ver. 1.0.0.2</div>
   <div class="mode-header fade-up">
     <div class="app-logo">🏪</div>
     <h1>Gestión de Tienda</h1>
@@ -809,7 +809,7 @@ let _db;
 
 async function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('anaqueles_pro_v1', 2);
+    const r = indexedDB.open('anaqueles_pro_v1', 3);
     r.onupgradeneeded = e => {
       const d = e.target.result;
       if (!d.objectStoreNames.contains('sections'))
@@ -818,6 +818,8 @@ async function openDB() {
         d.createObjectStore('sessions', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('config'))
         d.createObjectStore('config', { keyPath: 'key' });
+      if (!d.objectStoreNames.contains('images'))
+        d.createObjectStore('images', { keyPath: 'url' });
     };
     r.onsuccess = e => { _db = e.target.result; res(_db); };
     r.onerror = rej;
@@ -829,6 +831,13 @@ function dbTx(store, mode) {
 async function dbAll(store) {
   return new Promise((res, rej) => {
     const r = dbTx(store, 'readonly').getAll();
+    r.onsuccess = () => res(r.result);
+    r.onerror = rej;
+  });
+}
+async function dbGet(store, id) {
+  return new Promise((res, rej) => {
+    const r = dbTx(store, 'readonly').get(id);
     r.onsuccess = () => res(r.result);
     r.onerror = rej;
   });
@@ -856,7 +865,7 @@ async function dbClear(store) {
 /* ═══════════════════════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════════════════════ */
-const APP_VERSION = '1.0.0.1';
+const APP_VERSION = '1.0.0.2';
 const DEFAULT_WEBAPP_URLS = {
   anaqueles:  'https://script.google.com/macros/s/AKfycbxSjmd4JFGRHSWtdsEYZbip298KWEtduVfqdpfGee5c2cPK5-mEnAkaeFWGsZvR9RcE/exec',
   pedidos:    'https://script.google.com/macros/s/AKfycbz6ymKwn4okx0kcaZjXa1mV9oT4JmtR64YbUSPLJQ-5_X6-sfyWKPwoEJsT9SYC-j7KKQ/exec',
@@ -955,7 +964,8 @@ async function selectMode(mode) {
   // Filter DB data for the chosen mode
   const allSections = await dbAll('sections');
   const allSessions = await dbAll('sessions');
-  S.sections = allSections.filter(s => (s.mode || 'anaqueles') === mode);
+  const modeSections = allSections.filter(s => (s.mode || 'anaqueles') === mode);
+  S.sections = await hydrateCatalogImages(modeSections);
   S.sessions  = allSessions.filter(s => (s.mode || 'anaqueles') === mode);
 
   renderHome();
@@ -1091,8 +1101,11 @@ async function syncFromSheets() {
 
   try {
     const sections = await fetchSectionsFromSheets(S.config.webAppUrl);
-    // Stamp mode on each section
-    const stamped = sections.map(s => ({ ...s, mode: S.mode }));
+    // Stamp mode on each section and cache product images for offline use.
+    const stamped = await cacheCatalogImages(
+      sections.map(s => ({ ...s, mode: S.mode })),
+      { showProgress: true }
+    );
 
     // Only replace sections belonging to current mode
     await dbDelByMode('sections', S.mode);
@@ -1336,7 +1349,10 @@ function showPreview(sections) {
 async function confirmImport() {
   showVeil('Guardando catálogo…');
   try {
-    const stamped = S.pending.map(s => ({ ...s, mode: S.mode }));
+    const stamped = await cacheCatalogImages(
+      S.pending.map(s => ({ ...s, mode: S.mode })),
+      { showProgress: true }
+    );
     await dbDelByMode('sections', S.mode);
     for (const sec of stamped) await dbPut('sections', sec);
     S.sections = stamped;
@@ -1351,6 +1367,147 @@ async function confirmImport() {
     hideVeil();
     toast('Error al guardar: ' + err.message, 4000);
   }
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   OFFLINE IMAGE CACHE
+   Stores product images as data URLs in IndexedDB so the app can
+   display them during offline counts and inside printable reports.
+═══════════════════════════════════════════════════════════ */
+function productImageSrc(product) {
+  return product?.imageOfflineUrl || product?.imageDataUrl || product?.imageUrl || '';
+}
+
+function uniqueImageUrlsFromSections(sections) {
+  const seen = new Set();
+  const urls = [];
+  (sections || []).forEach(sec => {
+    (sec.products || []).forEach(p => {
+      const url = String(p.imageUrl || '').trim();
+      if (!url || url.startsWith('data:') || seen.has(url)) return;
+      seen.add(url);
+      urls.push(url);
+    });
+  });
+  return urls;
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result);
+    reader.onerror = rej;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function cacheImageForOffline(url) {
+  const cleanUrl = String(url || '').trim();
+  if (!cleanUrl) return '';
+  if (cleanUrl.startsWith('data:')) return cleanUrl;
+
+  try {
+    const cached = await dbGet('images', cleanUrl);
+    if (cached && cached.dataUrl) return cached.dataUrl;
+  } catch (err) {
+    console.warn('Image cache lookup failed:', err);
+  }
+
+  try {
+    const resp = await fetch(cleanUrl, {
+      cache: 'force-cache',
+      credentials: 'omit',
+      mode: 'cors'
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const blob = await resp.blob();
+    const dataUrl = await blobToDataUrl(blob);
+    await dbPut('images', {
+      url: cleanUrl,
+      dataUrl,
+      contentType: blob.type || '',
+      size: blob.size || 0,
+      cachedAt: Date.now()
+    });
+    return dataUrl;
+  } catch (err) {
+    // Some image hosts do not allow JavaScript to read the file with CORS.
+    // Fallback: cache the opaque image response for the service worker when possible.
+    await cacheOpaqueImageForOffline(cleanUrl);
+    console.warn('Offline image cache failed:', cleanUrl, err);
+    return '';
+  }
+}
+
+async function cacheOpaqueImageForOffline(url) {
+  if (!('caches' in window)) return false;
+  try {
+    const cache = await caches.open('anaqueles-pro-product-images');
+    const req = new Request(url, { mode: 'no-cors', cache: 'force-cache' });
+    const cached = await cache.match(req, { ignoreVary: true }) || await cache.match(url, { ignoreVary: true });
+    if (cached) return true;
+
+    const resp = await fetch(req);
+    await cache.put(req, resp.clone());
+    return true;
+  } catch (err) {
+    console.warn('Opaque image cache failed:', url, err);
+    return false;
+  }
+}
+
+async function hydrateCatalogImages(sections) {
+  const urls = uniqueImageUrlsFromSections(sections);
+  const cachedByUrl = new Map();
+
+  for (const url of urls) {
+    try {
+      const cached = await dbGet('images', url);
+      if (cached && cached.dataUrl) cachedByUrl.set(url, cached.dataUrl);
+    } catch (err) {
+      console.warn('Image hydrate failed:', err);
+    }
+  }
+
+  return (sections || []).map(sec => ({
+    ...sec,
+    products: (sec.products || []).map(p => ({
+      ...p,
+      imageOfflineUrl: p.imageOfflineUrl || cachedByUrl.get(String(p.imageUrl || '').trim()) || ''
+    }))
+  }));
+}
+
+async function cacheCatalogImages(sections, opts = {}) {
+  const urls = uniqueImageUrlsFromSections(sections);
+  const cachedByUrl = new Map();
+  let done = 0;
+
+  if (opts.showProgress && urls.length) {
+    showVeil(`Guardando imágenes para uso offline… 0/${urls.length}`);
+  }
+
+  for (const url of urls) {
+    const dataUrl = await cacheImageForOffline(url);
+    if (dataUrl) cachedByUrl.set(url, dataUrl);
+    done += 1;
+    if (opts.showProgress && urls.length) {
+      showVeil(`Guardando imágenes para uso offline… ${done}/${urls.length}`);
+    }
+  }
+
+  return (sections || []).map(sec => ({
+    ...sec,
+    products: (sec.products || []).map(p => {
+      const url = String(p.imageUrl || '').trim();
+      return {
+        ...p,
+        imageOfflineUrl: url.startsWith('data:') ? url : (cachedByUrl.get(url) || p.imageOfflineUrl || '')
+      };
+    })
+  }));
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1384,7 +1541,7 @@ function renderProduct() {
   document.getElementById('cb-back').disabled = S.idx === 0;
 
   // Product
-  document.getElementById('ci-img').src = p.imageUrl || '';
+  document.getElementById('ci-img').src = productImageSrc(p);
   document.getElementById('ci-name').textContent = p.name;
   const minMissing = normalizeMinMissing(p.minMissing);
   const packageSize = normalizePackageSize(p.packageSize);
@@ -1538,7 +1695,7 @@ function buildSession() {
       ? missing >= minMissing && (packageSize > 1 ? order.packages > 0 : missing > 0)
       : missing >= minMissing;
 
-    return { productId: p.id, name: p.name, imageUrl: p.imageUrl,
+    return { productId: p.id, name: p.name, imageUrl: p.imageUrl, imageOfflineUrl: p.imageOfflineUrl || '',
              required: p.required, counted, availableQty, missing, minMissing, packageSize,
              changeQty, hasChange: changeQty > 0,
              orderPackages: order.packages, orderPieces: order.pieces, shouldRestock };
@@ -1603,7 +1760,7 @@ function renderResults() {
       html += `<div class="results-section-title changes">↩ Cambios</div>`;
       html += changes.map(p => `
         <div class="missing-card">
-          <img class="missing-thumb" src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
+          <img class="missing-thumb" src="${esc(productImageSrc(p))}" alt="${esc(p.name)}"
                onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
           <div class="missing-info">
             <div class="missing-name">${esc(p.name)}</div>
@@ -1627,7 +1784,7 @@ function renderResults() {
           : `Hay: ${p.counted}`;
         return `
         <div class="missing-card">
-          <img class="missing-thumb" src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
+          <img class="missing-thumb" src="${esc(productImageSrc(p))}" alt="${esc(p.name)}"
                onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
           <div class="missing-info">
             <div class="missing-name">${esc(p.name)}</div>
@@ -1672,13 +1829,17 @@ function makePDF() {
   const accentBorder = isPedidos ? '#fde68a' : '#fecaca';
   const accentText = isPedidos ? '#92400e' : '#991b1b';
   const filePrefix = isPedidos ? 'pedido' : 'faltantes';
-  const date = new Date().toLocaleDateString('es-MX',
+  const reportDate = new Date();
+  const date = reportDate.toLocaleDateString('es-MX',
     { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const dateFile = reportDateSlug(reportDate);
+  const safeSectionName = safeFilePart(sec.name);
 
   function productImageMarkup(p) {
-    const hasImg = !!p.imageUrl;
+    const imgSrc = productImageSrc(p);
+    const hasImg = !!imgSrc;
     const imageMarkup = hasImg
-      ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}"
+      ? `<img src="${esc(imgSrc)}" alt="${esc(p.name)}"
           loading="eager" decoding="sync"
           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
       : '';
@@ -1770,7 +1931,7 @@ function makePDF() {
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${reportTitle} — ${esc(sec.name)}</title>
+  <title>${reportTitle} — ${esc(sec.name)} — ${dateFile}</title>
   <style>
     /* Formato A4 real para Android.
        El PDF conserva página ISO A4, pero usa tarjetas compactas de ancho completo
@@ -1885,7 +2046,7 @@ function makePDF() {
   if (!win) {
     // Fallback: descarga el HTML imprimible si el navegador bloquea ventanas emergentes.
     const a = Object.assign(document.createElement('a'),
-      { href: url, download: `${filePrefix}_${sec.name}_${date.replace(/\//g,'-')}.html` });
+      { href: url, download: `${filePrefix}_${safeSectionName}_${dateFile}.html` });
     a.click();
   }
 
@@ -2013,7 +2174,21 @@ function normalizeCatalogSections(sections) {
   }));
 }
 
-function todayStr() { return new Date().toISOString().split('T')[0]; }
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function reportDateSlug(d = new Date()) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function todayStr() { return reportDateSlug(new Date()); }
+
+function safeFilePart(s) {
+  return String(s || 'reporte')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80) || 'reporte';
+}
 
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
