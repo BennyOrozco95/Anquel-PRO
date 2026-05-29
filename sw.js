@@ -1,63 +1,81 @@
-/* ─── Anaqueles Pro — Service Worker ────────────────────────── */
-const CACHE  = 'anaqueles-pro-v2';
-const SHELL  = [
+const APP_VERSION = '1.0.0.2';
+const APP_CACHE = `anaqueles-pro-app-${APP_VERSION}`;
+const IMAGE_CACHE = 'anaqueles-pro-product-images';
+const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-  'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@500&display=swap'
+  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
 ];
 
-/* Install: pre-cache the app shell */
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE)
-      .then(cache => cache.addAll(SHELL))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(APP_CACHE);
+    await Promise.allSettled(APP_SHELL.map(url => cache.add(url)));
+    await self.skipWaiting();
+  })());
 });
 
-/* Activate: remove old caches */
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(key => {
+      const keep = key === APP_CACHE || key === IMAGE_CACHE;
+      return keep ? null : caches.delete(key);
+    }));
+    await self.clients.claim();
+  })());
 });
 
-/* Fetch: never cache Apps Script calls; cache-first for everything else */
+async function cacheFirstImage(request) {
+  const cache = await caches.open(IMAGE_CACHE);
+  const cached = await cache.match(request, { ignoreVary: true }) ||
+                 await cache.match(request.url, { ignoreVary: true });
+  if (cached) return cached;
+
+  const response = await fetch(request);
+  try { await cache.put(request, response.clone()); } catch (_) {}
+  return response;
+}
+
+async function networkFirst(request) {
+  const cache = await caches.open(APP_CACHE);
+  try {
+    const response = await fetch(request);
+    if (request.method === 'GET') {
+      try { await cache.put(request, response.clone()); } catch (_) {}
+    }
+    return response;
+  } catch (err) {
+    return (await cache.match(request, { ignoreVary: true })) ||
+           (await cache.match('./index.html', { ignoreVary: true })) ||
+           Response.error();
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(APP_CACHE);
+  const cached = await cache.match(request, { ignoreVary: true });
+  const fresh = fetch(request).then(response => {
+    try { cache.put(request, response.clone()); } catch (_) {}
+    return response;
+  }).catch(() => cached || Response.error());
+  return cached || fresh;
+}
+
 self.addEventListener('fetch', event => {
-  const { request } = event;
-  const url = new URL(request.url);
+  const request = event.request;
+  if (request.method !== 'GET') return;
 
-  /* Apps Script endpoint — ALWAYS go to network, never cache */
-  if (url.hostname === 'script.google.com') {
-    event.respondWith(fetch(request, { cache: 'no-store' }));
+  if (request.destination === 'image') {
+    event.respondWith(cacheFirstImage(request));
     return;
   }
 
-  /* Google Drive thumbnail images — network with fallback */
-  if (url.hostname === 'drive.google.com' || url.hostname === 'lh3.googleusercontent.com') {
-    event.respondWith(
-      fetch(request).catch(() =>
-        caches.match(request).then(r => r || new Response('', { status: 408 }))
-      )
-    );
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirst(request));
     return;
   }
 
-  /* Everything else: cache-first */
-  event.respondWith(
-    caches.match(request).then(cached => {
-      if (cached) return cached;
-      return fetch(request).then(response => {
-        if (response && response.status === 200 && response.type !== 'opaque') {
-          const clone = response.clone();
-          caches.open(CACHE).then(cache => cache.put(request, clone));
-        }
-        return response;
-      }).catch(() => caches.match('./index.html'));
-    })
-  );
+  event.respondWith(staleWhileRevalidate(request));
 });
