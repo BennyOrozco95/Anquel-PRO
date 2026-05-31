@@ -612,7 +612,7 @@
      MODE SELECTOR (first screen)
 ══════════════════════════════════════════════════════ -->
 <div class="screen off" id="screen-mode">
-  <div class="app-version" id="app-version">Ver. 1.0.0.2</div>
+  <div class="app-version" id="app-version">Ver. 1.0.0.3</div>
   <div class="mode-header fade-up">
     <div class="app-logo">🏪</div>
     <h1>Gestión de Tienda</h1>
@@ -865,7 +865,7 @@ async function dbClear(store) {
 /* ═══════════════════════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════════════════════ */
-const APP_VERSION = '1.0.0.2';
+const APP_VERSION = '1.0.0.3';
 const DEFAULT_WEBAPP_URLS = {
   anaqueles:  'https://script.google.com/macros/s/AKfycbxSjmd4JFGRHSWtdsEYZbip298KWEtduVfqdpfGee5c2cPK5-mEnAkaeFWGsZvR9RcE/exec',
   pedidos:    'https://script.google.com/macros/s/AKfycbz6ymKwn4okx0kcaZjXa1mV9oT4JmtR64YbUSPLJQ-5_X6-sfyWKPwoEJsT9SYC-j7KKQ/exec',
@@ -1375,8 +1375,26 @@ async function confirmImport() {
    Stores product images as data URLs in IndexedDB so the app can
    display them during offline counts and inside printable reports.
 ═══════════════════════════════════════════════════════════ */
-function productImageSrc(product) {
-  return product?.imageOfflineUrl || product?.imageDataUrl || product?.imageUrl || '';
+function isDataUrl(src) {
+  return String(src || '').trim().startsWith('data:image/');
+}
+
+function productImageSrc(product, opts = {}) {
+  // En pantalla sí permitimos URL remota como último recurso, porque el navegador
+  // o el service worker pueden tenerla en caché. Para reportes se debe llamar con
+  // { allowRemote: false } para evitar que el PDF dependa de internet.
+  const allowRemote = opts.allowRemote !== false;
+  const offline = product?.imageOfflineUrl || product?.imageDataUrl || '';
+  if (offline) return offline;
+  return allowRemote ? (product?.imageUrl || '') : '';
+}
+
+function reportImageSrc(product) {
+  // El reporte/exportación solo debe usar imágenes incrustadas en base64/data URL.
+  // Las URLs http(s) pueden verse en la app por caché opaca, pero fallan al imprimir
+  // o exportar sin conexión.
+  const src = productImageSrc(product, { allowRemote: false });
+  return isDataUrl(src) ? src : '';
 }
 
 function uniqueImageUrlsFromSections(sections) {
@@ -1473,10 +1491,15 @@ async function hydrateCatalogImages(sections) {
 
   return (sections || []).map(sec => ({
     ...sec,
-    products: (sec.products || []).map(p => ({
-      ...p,
-      imageOfflineUrl: p.imageOfflineUrl || cachedByUrl.get(String(p.imageUrl || '').trim()) || ''
-    }))
+    products: (sec.products || []).map(p => {
+      const url = String(p.imageUrl || '').trim();
+      const embedded = p.imageOfflineUrl || p.imageDataUrl || (isDataUrl(url) ? url : '');
+      return {
+        ...p,
+        imageDataUrl: p.imageDataUrl || embedded || '',
+        imageOfflineUrl: embedded || cachedByUrl.get(url) || ''
+      };
+    })
   }));
 }
 
@@ -1502,12 +1525,51 @@ async function cacheCatalogImages(sections, opts = {}) {
     ...sec,
     products: (sec.products || []).map(p => {
       const url = String(p.imageUrl || '').trim();
+      const embedded = p.imageOfflineUrl || p.imageDataUrl || (isDataUrl(url) ? url : '');
+      const cached = cachedByUrl.get(url) || '';
+      const offlineSrc = embedded || cached || '';
       return {
         ...p,
-        imageOfflineUrl: url.startsWith('data:') ? url : (cachedByUrl.get(url) || p.imageOfflineUrl || '')
+        // Guardamos la versión incrustada también como imageDataUrl para que las
+        // sesiones y reportes futuros no dependan del catálogo original.
+        imageDataUrl: p.imageDataUrl || offlineSrc || '',
+        imageOfflineUrl: offlineSrc
       };
     })
   }));
+}
+
+async function hydrateProductsForReport(products) {
+  return Promise.all((products || []).map(async p => {
+    const existing = p.imageOfflineUrl || p.imageDataUrl || '';
+    if (isDataUrl(existing)) {
+      return { ...p, imageDataUrl: p.imageDataUrl || existing, imageOfflineUrl: existing };
+    }
+
+    const url = String(p.imageUrl || '').trim();
+    if (isDataUrl(url)) {
+      return { ...p, imageDataUrl: url, imageOfflineUrl: url };
+    }
+
+    if (url) {
+      try {
+        const cached = await dbGet('images', url);
+        if (cached && isDataUrl(cached.dataUrl)) {
+          return { ...p, imageDataUrl: cached.dataUrl, imageOfflineUrl: cached.dataUrl };
+        }
+      } catch (err) {
+        console.warn('No se pudo rehidratar imagen para reporte:', p.name, err);
+      }
+    }
+
+    // Si solo hay una URL remota u opaca, no la usamos en el PDF offline.
+    return { ...p, imageOfflineUrl: '', imageDataUrl: '' };
+  }));
+}
+
+async function rehydrateReportLists() {
+  S.missing = await hydrateProductsForReport(S.missing || []);
+  S.changesList = await hydrateProductsForReport(S.changesList || []);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1695,7 +1757,12 @@ function buildSession() {
       ? missing >= minMissing && (packageSize > 1 ? order.packages > 0 : missing > 0)
       : missing >= minMissing;
 
-    return { productId: p.id, name: p.name, imageUrl: p.imageUrl, imageOfflineUrl: p.imageOfflineUrl || '',
+    const imageEmbedded = p.imageOfflineUrl || p.imageDataUrl || (isDataUrl(p.imageUrl) ? p.imageUrl : '');
+
+    return { productId: p.id, name: p.name,
+             imageUrl: p.imageUrl || '',
+             imageDataUrl: imageEmbedded || '',
+             imageOfflineUrl: imageEmbedded || '',
              required: p.required, counted, availableQty, missing, minMissing, packageSize,
              changeQty, hasChange: changeQty > 0,
              orderPackages: order.packages, orderPieces: order.pieces, shouldRestock };
@@ -1816,7 +1883,16 @@ function renderResults() {
 /* ═══════════════════════════════════════════════════════════
    PDF  — HTML blob opened for printing
 ═══════════════════════════════════════════════════════════ */
-function makePDF() {
+async function makePDF() {
+  showVeil('Preparando imágenes del reporte…');
+  try {
+    await rehydrateReportLists();
+  } catch (err) {
+    console.warn('No se pudieron preparar todas las imágenes del reporte:', err);
+  } finally {
+    hideVeil();
+  }
+
   const m = S.missing;
   const changes = S.changesList || [];
   const sec = S.activeSection;
@@ -1836,7 +1912,7 @@ function makePDF() {
   const safeSectionName = safeFilePart(sec.name);
 
   function productImageMarkup(p) {
-    const imgSrc = productImageSrc(p);
+    const imgSrc = reportImageSrc(p);
     const hasImg = !!imgSrc;
     const imageMarkup = hasImg
       ? `<img src="${esc(imgSrc)}" alt="${esc(p.name)}"
@@ -2156,6 +2232,9 @@ function normalizeCatalogSections(sections) {
       ...p,
       id: p.id || `${sec.name || 'sec'}_p${prodIdx}`,
       required: Number(p.required) || 0,
+      imageUrl: p.imageUrl || p.image || p.img || p.foto || p.urlImagen || '',
+      imageDataUrl: p.imageDataUrl || p.imageBase64 || p.base64Image || '',
+      imageOfflineUrl: p.imageOfflineUrl || p.imageDataUrl || p.imageBase64 || p.base64Image || '',
       packageSize: normalizePackageSize(
         p.packageSize ??
         p.packSize ??
