@@ -1617,17 +1617,30 @@ async function hydrateProductsForReport(products) {
     }
 
     if (url) {
+      // 1) Primero buscamos la imagen ya guardada en IndexedDB.
       try {
         const cached = await dbGet('images', url);
         if (cached && isDataUrl(cached.dataUrl)) {
           return { ...p, imageDataUrl: cached.dataUrl, imageOfflineUrl: cached.dataUrl };
         }
       } catch (err) {
-        console.warn('No se pudo rehidratar imagen para reporte:', p.name, err);
+        console.warn('No se pudo leer imagen offline para reporte:', p.name, err);
+      }
+
+      // 2) Si el producto se ve en pantalla pero todavía no está como base64,
+      // intentamos guardarlo en ese momento. Con internet usará CORS/proxy;
+      // sin internet solo funcionará si ya estaba realmente guardado en IndexedDB.
+      try {
+        const freshDataUrl = await cacheImageForOffline(url);
+        if (isDataUrl(freshDataUrl)) {
+          return { ...p, imageDataUrl: freshDataUrl, imageOfflineUrl: freshDataUrl };
+        }
+      } catch (err) {
+        console.warn('No se pudo preparar imagen para PDF:', p.name, err);
       }
     }
 
-    // Si solo hay una URL remota u opaca, no la usamos en el PDF offline.
+    // Si solo queda una URL remota u opaca, no sirve para PDF offline.
     return { ...p, imageOfflineUrl: '', imageDataUrl: '' };
   }));
 }
@@ -2148,50 +2161,73 @@ async function makePDF() {
 
     <script>
       (function(){
-        let printed = false;
+        var printed = false;
         function safePrint(){
           if (printed) return;
           printed = true;
-          setTimeout(function(){ window.print(); }, 200);
+          // Damos un margen extra para que el motor de impresión pinte las imágenes ya decodificadas.
+          setTimeout(function(){ window.focus(); window.print(); }, 900);
         }
+
+        function waitImage(img){
+          return new Promise(function(resolve){
+            var finished = false;
+            function finish(){
+              if (finished) return;
+              finished = true;
+              if (img.decode) {
+                img.decode().catch(function(){}).then(function(){
+                  setTimeout(resolve, 120);
+                });
+              } else {
+                setTimeout(resolve, 250);
+              }
+            }
+
+            if (img.complete && img.naturalWidth !== 0) finish();
+            else {
+              img.onload = finish;
+              img.onerror = finish;
+              // Evita que una imagen lenta bloquee el reporte.
+              setTimeout(finish, 6000);
+            }
+          });
+        }
+
         function waitForImages(){
           var imgs = Array.prototype.slice.call(document.images || []);
           if (!imgs.length) return safePrint();
 
-          var pending = imgs.length;
-          function done(){
-            pending -= 1;
-            if (pending <= 0) safePrint();
-          }
-
-          imgs.forEach(function(img){
-            if (img.complete) done();
-            else {
-              img.onload = done;
-              img.onerror = done;
-            }
-          });
-
-          // Evita que una imagen lenta bloquee el reporte.
-          setTimeout(safePrint, 4000);
+          Promise.all(imgs.map(waitImage)).then(safePrint);
+          // Fallback global para no bloquear la impresión.
+          setTimeout(safePrint, 9000);
         }
-        window.addEventListener('load', waitForImages);
+
+        if (document.readyState === 'complete') waitForImages();
+        else window.addEventListener('load', waitForImages);
       })();
     <\/script>
   </body></html>`;
 
-  const blob = new Blob([html], { type: 'text/html' });
-  const url  = URL.createObjectURL(blob);
-  const win  = window.open(url, '_blank');
+  // Abrimos una ventana vacía y escribimos el HTML directamente.
+  // Esto evita fallos frecuentes de impresión con blob: URLs en Android/iOS,
+  // donde las imágenes data:image pueden verse en pantalla pero perderse al generar PDF.
+  const win = window.open('', '_blank');
 
-  if (!win) {
-    // Fallback: descarga el HTML imprimible si el navegador bloquea ventanas emergentes.
-    const a = Object.assign(document.createElement('a'),
-      { href: url, download: `${filePrefix}_${safeSectionName}_${dateFile}.html` });
-    a.click();
+  if (win) {
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    return;
   }
 
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  // Fallback: descarga el HTML imprimible si el navegador bloquea ventanas emergentes.
+  const blob = new Blob([html], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'),
+    { href: url, download: `${filePrefix}_${safeSectionName}_${dateFile}.html` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
 /* ═══════════════════════════════════════════════════════════
