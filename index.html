@@ -612,7 +612,7 @@
      MODE SELECTOR (first screen)
 ══════════════════════════════════════════════════════ -->
 <div class="screen off" id="screen-mode">
-  <div class="app-version" id="app-version">Ver. 1.0.0.5</div>
+  <div class="app-version" id="app-version">Ver. 1.0.0.6</div>
   <div class="mode-header fade-up">
     <div class="app-logo">🏪</div>
     <h1>Gestión de Tienda</h1>
@@ -865,7 +865,7 @@ async function dbClear(store) {
 /* ═══════════════════════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════════════════════ */
-const APP_VERSION = '1.0.0.5';
+const APP_VERSION = '1.0.0.6';
 const DEFAULT_WEBAPP_URLS = {
   anaqueles:  'https://script.google.com/macros/s/AKfycbxSjmd4JFGRHSWtdsEYZbip298KWEtduVfqdpfGee5c2cPK5-mEnAkaeFWGsZvR9RcE/exec',
   pedidos:    'https://script.google.com/macros/s/AKfycbz6ymKwn4okx0kcaZjXa1mV9oT4JmtR64YbUSPLJQ-5_X6-sfyWKPwoEJsT9SYC-j7KKQ/exec',
@@ -1131,7 +1131,9 @@ async function syncFromSheets() {
 async function fetchSectionsFromSheets(url) {
   // Append a timestamp so Google's CDN and the service worker
   // always treat this as a brand-new request — never a cached one.
-  const bustUrl = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+  const bustUrl = url
+    + (url.includes('?') ? '&' : '?')
+    + 'includeImages=1&_t=' + Date.now();
 
   const resp = await fetch(bustUrl, {
     redirect: 'follow',
@@ -1604,45 +1606,185 @@ async function cacheCatalogImages(sections, opts = {}) {
   }));
 }
 
+function extractDriveFileIdFromUrl(url) {
+  url = String(url || '');
+  const patterns = [
+    /\/d\/([a-zA-Z0-9_-]{20,})/,
+    /[?&]id=([a-zA-Z0-9_-]{20,})/,
+    /\/file\/d\/([a-zA-Z0-9_-]{20,})/,
+    /open\?id=([a-zA-Z0-9_-]{20,})/
+  ];
+  for (const re of patterns) {
+    const m = url.match(re);
+    if (m && m[1]) return m[1];
+  }
+  return '';
+}
+
+async function getCachedImageDataUrlForProductUrl(url) {
+  const cleanUrl = String(url || '').trim();
+  if (!cleanUrl) return '';
+  if (isDataUrl(cleanUrl)) return cleanUrl;
+
+  try {
+    const exact = await dbGet('images', cleanUrl);
+    if (exact && isDataUrl(exact.dataUrl)) return exact.dataUrl;
+  } catch (err) {
+    console.warn('No se pudo leer imagen offline exacta:', err);
+  }
+
+  // Fallback importante para Google Drive: a veces la URL del catálogo cambia
+  // de formato, pero el ID del archivo es el mismo.
+  const driveId = extractDriveFileIdFromUrl(cleanUrl);
+  if (driveId) {
+    try {
+      const all = await dbAll('images');
+      const match = all.find(img =>
+        img && isDataUrl(img.dataUrl) && extractDriveFileIdFromUrl(img.url) === driveId
+      );
+      if (match) return match.dataUrl;
+    } catch (err) {
+      console.warn('No se pudo buscar imagen offline por Drive ID:', err);
+    }
+  }
+
+  return '';
+}
+
+function activeCatalogProductForReportItem(reportItem) {
+  const id = reportItem?.productId || reportItem?.id || '';
+  if (id && Array.isArray(S.products)) {
+    const byId = S.products.find(p => p.id === id || p.productId === id);
+    if (byId) return byId;
+  }
+  if (id && S.activeSection && Array.isArray(S.activeSection.products)) {
+    const byId = S.activeSection.products.find(p => p.id === id || p.productId === id);
+    if (byId) return byId;
+  }
+  const name = String(reportItem?.name || '').trim();
+  if (name && Array.isArray(S.products)) {
+    const byName = S.products.find(p => String(p.name || '').trim() === name);
+    if (byName) return byName;
+  }
+  if (name && S.activeSection && Array.isArray(S.activeSection.products)) {
+    const byName = S.activeSection.products.find(p => String(p.name || '').trim() === name);
+    if (byName) return byName;
+  }
+  return null;
+}
+
+function uniqueNonEmpty(values) {
+  const seen = new Set();
+  const out = [];
+  values.forEach(v => {
+    const s = String(v || '').trim();
+    if (!s || seen.has(s)) return;
+    seen.add(s);
+    out.push(s);
+  });
+  return out;
+}
+
+function loadImageForCanvas(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.loading = 'eager';
+    img.decoding = 'sync';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se pudo decodificar la imagen'));
+    img.src = src;
+  });
+}
+
+async function normalizeImageForPdf(src, opts = {}) {
+  let input = String(src || '').trim();
+  if (!input) return '';
+
+  if (!isDataUrl(input)) {
+    const cached = await getCachedImageDataUrlForProductUrl(input);
+    if (cached) input = cached;
+  }
+
+  if (!isDataUrl(input)) return '';
+
+  try {
+    const img = await loadImageForCanvas(input);
+    const naturalW = img.naturalWidth || img.width || 1;
+    const naturalH = img.naturalHeight || img.height || 1;
+    const maxSide = opts.maxSide || 420;
+    const ratio = Math.min(1, maxSide / Math.max(naturalW, naturalH));
+    const w = Math.max(1, Math.round(naturalW * ratio));
+    const h = Math.max(1, Math.round(naturalH * ratio));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+
+    // JPEG pequeño y estándar. Esto evita que el motor de impresión/PDF falle
+    // con imágenes muy grandes, WebP/AVIF/SVG o data URLs pesadas.
+    const out = canvas.toDataURL('image/jpeg', opts.quality || 0.86);
+    return isDataUrl(out) ? out : input;
+  } catch (err) {
+    console.warn('No se pudo normalizar imagen para PDF; se usará la original si es data URL:', err);
+    return input;
+  }
+}
+
+async function prepareProductImageForPdf(product) {
+  const catalogProduct = activeCatalogProductForReportItem(product);
+  const candidates = uniqueNonEmpty([
+    product?.pdfImageUrl,
+    product?.imageOfflineUrl,
+    product?.imageDataUrl,
+    product?.imageUrl,
+    catalogProduct?.imageOfflineUrl,
+    catalogProduct?.imageDataUrl,
+    catalogProduct?.imageUrl
+  ]);
+
+  for (const candidate of candidates) {
+    try {
+      let dataUrl = '';
+
+      if (isDataUrl(candidate)) {
+        dataUrl = candidate;
+      } else {
+        dataUrl = await getCachedImageDataUrlForProductUrl(candidate);
+        if (!dataUrl && navigator.onLine !== false) {
+          dataUrl = await cacheImageForOffline(candidate);
+        }
+      }
+
+      if (!isDataUrl(dataUrl)) continue;
+
+      const pdfImageUrl = await normalizeImageForPdf(dataUrl, { maxSide: 420, quality: 0.86 });
+      if (isDataUrl(pdfImageUrl)) {
+        return {
+          ...product,
+          imageDataUrl: dataUrl,
+          imageOfflineUrl: dataUrl,
+          pdfImageUrl
+        };
+      }
+    } catch (err) {
+      console.warn('Falló una imagen candidata para PDF:', product?.name, err);
+    }
+  }
+
+  return { ...product, pdfImageUrl: '' };
+}
+
 async function hydrateProductsForReport(products) {
-  return Promise.all((products || []).map(async p => {
-    const existing = p.imageOfflineUrl || p.imageDataUrl || '';
-    if (isDataUrl(existing)) {
-      return { ...p, imageDataUrl: p.imageDataUrl || existing, imageOfflineUrl: existing };
-    }
-
-    const url = String(p.imageUrl || '').trim();
-    if (isDataUrl(url)) {
-      return { ...p, imageDataUrl: url, imageOfflineUrl: url };
-    }
-
-    if (url) {
-      // 1) Primero buscamos la imagen ya guardada en IndexedDB.
-      try {
-        const cached = await dbGet('images', url);
-        if (cached && isDataUrl(cached.dataUrl)) {
-          return { ...p, imageDataUrl: cached.dataUrl, imageOfflineUrl: cached.dataUrl };
-        }
-      } catch (err) {
-        console.warn('No se pudo leer imagen offline para reporte:', p.name, err);
-      }
-
-      // 2) Si el producto se ve en pantalla pero todavía no está como base64,
-      // intentamos guardarlo en ese momento. Con internet usará CORS/proxy;
-      // sin internet solo funcionará si ya estaba realmente guardado en IndexedDB.
-      try {
-        const freshDataUrl = await cacheImageForOffline(url);
-        if (isDataUrl(freshDataUrl)) {
-          return { ...p, imageDataUrl: freshDataUrl, imageOfflineUrl: freshDataUrl };
-        }
-      } catch (err) {
-        console.warn('No se pudo preparar imagen para PDF:', p.name, err);
-      }
-    }
-
-    // Si solo queda una URL remota u opaca, no sirve para PDF offline.
-    return { ...p, imageOfflineUrl: '', imageDataUrl: '' };
-  }));
+  const out = [];
+  for (const p of (products || [])) {
+    out.push(await prepareProductImageForPdf(p));
+  }
+  return out;
 }
 
 async function rehydrateReportLists() {
@@ -1962,6 +2104,15 @@ function renderResults() {
    PDF  — HTML blob opened for printing
 ═══════════════════════════════════════════════════════════ */
 async function makePDF() {
+  // Abrimos la ventana inmediatamente, dentro del clic del usuario. En móviles,
+  // si esperamos a procesar imágenes antes de window.open(), puede bloquearse.
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.open();
+    win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Preparando PDF…</title><style>body{font-family:Arial,sans-serif;margin:24px;color:#0f172a}.box{border:1px solid #e2e8f0;border-radius:12px;padding:18px;max-width:420px}.muted{color:#64748b}</style></head><body><div class="box"><h2>Preparando PDF…</h2><p class="muted">Optimizando imágenes para que salgan en el reporte.</p></div></body></html>`);
+    win.document.close();
+  }
+
   showVeil('Preparando imágenes del reporte…');
   try {
     await rehydrateReportLists();
@@ -1990,8 +2141,8 @@ async function makePDF() {
   const safeSectionName = safeFilePart(sec.name);
 
   function productImageMarkup(p) {
-    const imgSrc = reportImageSrc(p);
-    const hasImg = !!imgSrc;
+    const imgSrc = p.pdfImageUrl || reportImageSrc(p);
+    const hasImg = isDataUrl(imgSrc);
     const imageMarkup = hasImg
       ? `<img src="${esc(imgSrc)}" alt="${esc(p.name)}"
           loading="eager" decoding="sync"
@@ -2209,12 +2360,8 @@ async function makePDF() {
     <\/script>
   </body></html>`;
 
-  // Abrimos una ventana vacía y escribimos el HTML directamente.
-  // Esto evita fallos frecuentes de impresión con blob: URLs en Android/iOS,
-  // donde las imágenes data:image pueden verse en pantalla pero perderse al generar PDF.
-  const win = window.open('', '_blank');
-
-  if (win) {
+  // Reutilizamos la ventana abierta al principio y escribimos el HTML final.
+  if (win && !win.closed) {
     win.document.open();
     win.document.write(html);
     win.document.close();
