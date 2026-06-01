@@ -1,4 +1,4 @@
-const APP_VERSION = '1.0.0.5';
+const APP_VERSION = '1.0.0.6';
 const APP_CACHE = `anaqueles-pro-app-${APP_VERSION}`;
 const IMAGE_CACHE = 'anaqueles-pro-product-images';
 
@@ -21,12 +21,10 @@ self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
 
-    await Promise.all(
-      keys.map(key => {
-        const keep = key === APP_CACHE || key === IMAGE_CACHE;
-        return keep ? null : caches.delete(key);
-      })
-    );
+    await Promise.all(keys.map(key => {
+      const keep = key === APP_CACHE || key === IMAGE_CACHE;
+      return keep ? null : caches.delete(key);
+    }));
 
     await self.clients.claim();
   })());
@@ -41,36 +39,22 @@ async function cacheFirstImage(request) {
 
   if (cached) return cached;
 
+  const response = await fetch(request);
+
   try {
-    const response = await fetch(request, {
-      cache: 'no-store',
-      mode: 'cors',
-      credentials: 'omit'
-    });
+    await cache.put(request, response.clone());
+  } catch (_) {}
 
-    if (response && response.ok) {
-      try {
-        await cache.put(request, response.clone());
-      } catch (_) {}
-
-      return response;
-    }
-
-    return response;
-  } catch (err) {
-    return Response.error();
-  }
+  return response;
 }
 
 async function networkFirst(request) {
   const cache = await caches.open(APP_CACHE);
 
   try {
-    const response = await fetch(request, {
-      cache: 'no-store'
-    });
+    const response = await fetch(request);
 
-    if (request.method === 'GET' && response && response.ok) {
+    if (request.method === 'GET') {
       try {
         await cache.put(request, response.clone());
       } catch (_) {}
@@ -93,11 +77,9 @@ async function staleWhileRevalidate(request) {
 
   const fresh = fetch(request)
     .then(response => {
-      if (response && response.ok) {
-        try {
-          cache.put(request, response.clone());
-        } catch (_) {}
-      }
+      try {
+        cache.put(request, response.clone());
+      } catch (_) {}
 
       return response;
     })
@@ -110,18 +92,6 @@ self.addEventListener('fetch', event => {
   const request = event.request;
 
   if (request.method !== 'GET') return;
-
-  const url = new URL(request.url);
-
-  // No cachear llamadas al Apps Script con parámetro anti-cache.
-  // Esto evita que la sincronización traiga datos viejos.
-  if (
-    url.hostname.includes('script.google.com') ||
-    url.hostname.includes('googleusercontent.com')
-  ) {
-    event.respondWith(fetch(request, { cache: 'no-store' }));
-    return;
-  }
 
   if (request.destination === 'image') {
     event.respondWith(cacheFirstImage(request));
