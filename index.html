@@ -612,7 +612,7 @@
      MODE SELECTOR (first screen)
 ══════════════════════════════════════════════════════ -->
 <div class="screen off" id="screen-mode">
-  <div class="app-version" id="app-version">Ver. 1.0.0.3</div>
+  <div class="app-version" id="app-version">Ver. 1.0.0.5</div>
   <div class="mode-header fade-up">
     <div class="app-logo">🏪</div>
     <h1>Gestión de Tienda</h1>
@@ -865,7 +865,7 @@ async function dbClear(store) {
 /* ═══════════════════════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════════════════════ */
-const APP_VERSION = '1.0.0.3';
+const APP_VERSION = '1.0.0.5';
 const DEFAULT_WEBAPP_URLS = {
   anaqueles:  'https://script.google.com/macros/s/AKfycbxSjmd4JFGRHSWtdsEYZbip298KWEtduVfqdpfGee5c2cPK5-mEnAkaeFWGsZvR9RcE/exec',
   pedidos:    'https://script.google.com/macros/s/AKfycbz6ymKwn4okx0kcaZjXa1mV9oT4JmtR64YbUSPLJQ-5_X6-sfyWKPwoEJsT9SYC-j7KKQ/exec',
@@ -1420,6 +1420,29 @@ function blobToDataUrl(blob) {
   });
 }
 
+function guessImageContentType(url, fallback = 'image/jpeg') {
+  const clean = String(url || '').split('?')[0].toLowerCase();
+  if (clean.endsWith('.png')) return 'image/png';
+  if (clean.endsWith('.webp')) return 'image/webp';
+  if (clean.endsWith('.gif')) return 'image/gif';
+  if (clean.endsWith('.svg')) return 'image/svg+xml';
+  if (clean.endsWith('.jpg') || clean.endsWith('.jpeg')) return 'image/jpeg';
+  return fallback;
+}
+
+async function storeOfflineImageDataUrl(url, dataUrl, meta = {}) {
+  if (!url || !isDataUrl(dataUrl)) return '';
+  await dbPut('images', {
+    url,
+    dataUrl,
+    contentType: meta.contentType || dataUrl.slice(5, dataUrl.indexOf(';')) || '',
+    size: meta.size || 0,
+    cachedAt: Date.now(),
+    source: meta.source || 'direct'
+  });
+  return dataUrl;
+}
+
 async function cacheImageForOffline(url) {
   const cleanUrl = String(url || '').trim();
   if (!cleanUrl) return '';
@@ -1427,36 +1450,78 @@ async function cacheImageForOffline(url) {
 
   try {
     const cached = await dbGet('images', cleanUrl);
-    if (cached && cached.dataUrl) return cached.dataUrl;
+    if (cached && isDataUrl(cached.dataUrl)) return cached.dataUrl;
   } catch (err) {
     console.warn('Image cache lookup failed:', err);
   }
 
+  // 1) Intento directo. Solo funciona si el servidor de la imagen permite CORS.
   try {
     const resp = await fetch(cleanUrl, {
-      cache: 'force-cache',
+      cache: 'no-store',
       credentials: 'omit',
       mode: 'cors'
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-    const blob = await resp.blob();
+    let blob = await resp.blob();
+    if (!String(blob.type || '').startsWith('image/')) {
+      blob = blob.slice(0, blob.size, guessImageContentType(cleanUrl));
+    }
+
     const dataUrl = await blobToDataUrl(blob);
-    await dbPut('images', {
-      url: cleanUrl,
-      dataUrl,
-      contentType: blob.type || '',
+    if (!isDataUrl(dataUrl)) throw new Error('La respuesta no es una imagen válida');
+
+    return await storeOfflineImageDataUrl(cleanUrl, dataUrl, {
+      contentType: blob.type || guessImageContentType(cleanUrl),
       size: blob.size || 0,
-      cachedAt: Date.now()
+      source: 'direct-cors'
     });
-    return dataUrl;
-  } catch (err) {
-    // Some image hosts do not allow JavaScript to read the file with CORS.
-    // Fallback: cache the opaque image response for the service worker when possible.
-    await cacheOpaqueImageForOffline(cleanUrl);
-    console.warn('Offline image cache failed:', cleanUrl, err);
-    return '';
+  } catch (directErr) {
+    console.warn('Direct image download failed, trying Apps Script proxy:', cleanUrl, directErr);
   }
+
+  // 2) Intento por el mismo Apps Script de sincronización. Esto evita el bloqueo CORS
+  // y es el camino necesario para que las imágenes entren al PDF offline como base64.
+  try {
+    const proxied = await cacheImageViaSyncEndpoint(cleanUrl);
+    if (proxied) return proxied;
+  } catch (proxyErr) {
+    console.warn('Apps Script image proxy failed:', cleanUrl, proxyErr);
+  }
+
+  // 3) Último recurso: caché opaco. Puede servir para ver imágenes en conteo offline,
+  // pero NO sirve para PDF porque JavaScript no puede leer la imagen y convertirla a base64.
+  await cacheOpaqueImageForOffline(cleanUrl);
+  return '';
+}
+
+async function cacheImageViaSyncEndpoint(url) {
+  const endpoint = S.config?.webAppUrl || '';
+  if (!endpoint) return '';
+
+  const proxyUrl = endpoint
+    + (endpoint.includes('?') ? '&' : '?')
+    + 'mode=image&url=' + encodeURIComponent(url)
+    + '&_t=' + Date.now();
+
+  const resp = await fetch(proxyUrl, {
+    redirect: 'follow',
+    cache: 'no-store'
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+  const data = await resp.json();
+  if (!data.ok) throw new Error(data.error || 'El proxy no devolvió una imagen válida');
+
+  const dataUrl = data.dataUrl || data.imageDataUrl || '';
+  if (!isDataUrl(dataUrl)) throw new Error('El proxy no devolvió data:image/...');
+
+  return await storeOfflineImageDataUrl(url, dataUrl, {
+    contentType: data.contentType || '',
+    size: data.size || 0,
+    source: 'apps-script-proxy'
+  });
 }
 
 async function cacheOpaqueImageForOffline(url) {
