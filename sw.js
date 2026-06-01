@@ -1,4 +1,4 @@
-const APP_VERSION = '1.0.0.7';
+const APP_VERSION = '1.0.0.2';
 const APP_CACHE = `anaqueles-pro-app-${APP_VERSION}`;
 const IMAGE_CACHE = 'anaqueles-pro-product-images';
 
