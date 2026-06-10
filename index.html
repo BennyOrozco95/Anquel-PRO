@@ -612,7 +612,7 @@
      MODE SELECTOR (first screen)
 ══════════════════════════════════════════════════════ -->
 <div class="screen off" id="screen-mode">
-  <div class="app-version" id="app-version">Ver. 1.0.0.4</div>
+  <div class="app-version" id="app-version">Ver. 1.0.0.5</div>
   <div class="mode-header fade-up">
     <div class="app-logo">🏪</div>
     <h1>Gestión de Tienda</h1>
@@ -865,7 +865,7 @@ async function dbClear(store) {
 /* ═══════════════════════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════════════════════ */
-const APP_VERSION = '1.0.0.4';
+const APP_VERSION = '1.0.0.5';
 const DEFAULT_WEBAPP_URLS = {
   anaqueles:  'https://script.google.com/macros/s/AKfycbxSjmd4JFGRHSWtdsEYZbip298KWEtduVfqdpfGee5c2cPK5-mEnAkaeFWGsZvR9RcE/exec',
   pedidos:    'https://script.google.com/macros/s/AKfycbz6ymKwn4okx0kcaZjXa1mV9oT4JmtR64YbUSPLJQ-5_X6-sfyWKPwoEJsT9SYC-j7KKQ/exec',
@@ -1931,10 +1931,12 @@ function renderProduct() {
     : `Requeridos: ${required}${sourceInfo}${packageInfo}`;
 
   // Restore saved values for this product if navigating back.
+  // Important: if the user entered 0, restore it as "0", not as empty.
+  // This lets us distinguish between "not captured yet" and "0 confirmed".
   const saved = S.counts[S.idx];
   const savedChange = S.changes[S.idx];
-  S.entered = saved !== undefined ? (saved === 0 ? '' : String(saved)) : '';
-  S.changeEntered = savedChange !== undefined ? (savedChange === 0 ? '' : String(savedChange)) : '';
+  S.entered = saved !== undefined ? String(saved) : '';
+  S.changeEntered = savedChange !== undefined && savedChange > 0 ? String(savedChange) : '';
   S.activeCountField = 'stock'; // Existencias is always selected by default.
   updateBox();
 
@@ -1993,7 +1995,15 @@ function updateBox() {
 }
 
 function saveCurrentCount() {
-  S.counts[S.idx] = S.entered === '' ? 0 : parseInt(S.entered, 10);
+  // Do not automatically store 0 when the stock field is empty.
+  // Empty means "not captured yet"; explicit "0" means "zero confirmed".
+  if (S.entered === '') {
+    delete S.counts[S.idx];
+  } else {
+    S.counts[S.idx] = parseInt(S.entered, 10);
+  }
+
+  // Changes are optional in Pedidos. Empty changes count as 0.
   S.changes[S.idx] = (S.mode === 'pedidos' && S.changeEntered !== '')
     ? parseInt(S.changeEntered, 10)
     : 0;
@@ -2007,7 +2017,17 @@ function prevProduct() {
 }
 
 function nextProduct() {
+  // Prevent accidental skips. To advance, the stock field must be captured.
+  // If there are no units, the user must press 0 explicitly.
+  if (S.entered === '') {
+    S.activeCountField = 'stock';
+    updateBox();
+    toast('Escribe 0 si no hay existencias', 2500);
+    return;
+  }
+
   saveCurrentCount();
+
   if (S.idx < S.products.length - 1) {
     S.idx++;
     renderProduct();
@@ -2262,6 +2282,7 @@ async function makePDF() {
 
   function changeRows() {
     if (!isPedidos || !changes.length) return '';
+
     return `<div class="section-title change">↩ Cambios</div>` + changes.map((p, i) => `
       <article class="item-card change-card">
         <div class="item-head">
@@ -2275,36 +2296,20 @@ async function makePDF() {
             </div>
           </div>
         </div>
-        <div class="meta-row">
-          <span class="chip">Hay: <strong>${p.counted}</strong></span>
-          <span class="chip">Cambios: <strong>${p.changeQty}</strong></span>
-          <span class="chip">Disponible: <strong>${p.availableQty}</strong></span>
-          <span class="chip">Req: <strong>${p.required}</strong>${p.requiredSource ? ` ${p.requiredSource}` : ''}</span>
-          <span class="chip">Faltan: <strong>${p.missing}</strong></span>
-        </div>
       </article>`).join('');
   }
 
   function orderRows() {
     if (!m.length) return '';
+
     const title = isPedidos ? `<div class="section-title order">📦 Pedido</div>` : '';
+
     return title + m.map((p, i) => {
       const packageSize = normalizePackageSize(p.packageSize);
       const usePackages = isPedidos && packageSize > 1;
       const qtyMain = usePackages ? p.orderPackages : p.missing;
       const qtyUnit = usePackages ? 'paq' : 'pz';
       const qtyLabelText = isPedidos ? 'Pedir' : 'Surtir';
-      const minChip = p.minMissing > 1
-        ? `<span class="chip">Min: <strong>${p.minMissing}</strong></span>`
-        : '';
-      const packageNote = usePackages
-        ? `<div class="package-note">Paquete: <strong>${packageSize} pz</strong> · Pedir equivale a <strong>${p.orderPieces} pz</strong></div>`
-        : '';
-      const availabilityChips = isPedidos
-        ? `<span class="chip">Hay: <strong>${p.counted}</strong></span>` +
-          (p.changeQty > 0 ? `<span class="chip">Cambios: <strong>${p.changeQty}</strong></span>` : '') +
-          `<span class="chip">Disponible: <strong>${p.availableQty}</strong></span>`
-        : `<span class="chip">Hay: <strong>${p.counted}</strong></span>`;
 
       return `
         <article class="item-card">
@@ -2321,15 +2326,6 @@ async function makePDF() {
               </div>
             </div>
           </div>
-
-          <div class="meta-row">
-            ${availabilityChips}
-            <span class="chip">Req: <strong>${p.required}</strong>${p.requiredSource ? ` ${p.requiredSource}` : ''}</span>
-            <span class="chip">Faltan: <strong>${p.missing}</strong></span>
-            ${minChip}
-          </div>
-
-          ${packageNote}
         </article>`;
     }).join('');
   }
@@ -2365,7 +2361,9 @@ async function makePDF() {
     .section-title.order{background:#fffbeb;border-color:#fde68a;color:#92400e}
 
     .item-card{border:1px solid #dbe4ef;border-radius:12px;padding:8px 9px;margin-bottom:6px;background:#fff;break-inside:avoid;page-break-inside:avoid;box-shadow:0 1px 2px rgba(15,23,42,.05)}
-    .item-card.change-card{border-color:#fecaca}
+    .item-card.change-card{border-color:#fecaca;background:#fef2f2}
+    .item-card.change-card .thumb{background:#fff;border-color:#fecaca}
+    .item-card.change-card .item-copy h2{color:#7f1d1d}
     .item-head{display:flex;gap:11px;align-items:flex-start}
 
     /* Imagen grande pero compacta: aprovecha A4 sin dejar solo 3 productos por hoja. */
