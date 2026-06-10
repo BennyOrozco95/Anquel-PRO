@@ -612,7 +612,7 @@
      MODE SELECTOR (first screen)
 ══════════════════════════════════════════════════════ -->
 <div class="screen off" id="screen-mode">
-  <div class="app-version" id="app-version">Ver. 1.0.0.2</div>
+  <div class="app-version" id="app-version">Ver. 1.0.0.4</div>
   <div class="mode-header fade-up">
     <div class="app-logo">🏪</div>
     <h1>Gestión de Tienda</h1>
@@ -865,7 +865,7 @@ async function dbClear(store) {
 /* ═══════════════════════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════════════════════ */
-const APP_VERSION = '1.0.0.2';
+const APP_VERSION = '1.0.0.4';
 const DEFAULT_WEBAPP_URLS = {
   anaqueles:  'https://script.google.com/macros/s/AKfycbxSjmd4JFGRHSWtdsEYZbip298KWEtduVfqdpfGee5c2cPK5-mEnAkaeFWGsZvR9RcE/exec',
   pedidos:    'https://script.google.com/macros/s/AKfycbz6ymKwn4okx0kcaZjXa1mV9oT4JmtR64YbUSPLJQ-5_X6-sfyWKPwoEJsT9SYC-j7KKQ/exec',
@@ -876,6 +876,12 @@ const S = {
   mode:         'anaqueles',  // 'anaqueles' | 'pedidos' | 'inventario'
   sections:     [],   // filtered by current mode
   sessions:     [],   // filtered by current mode
+
+  // Solo aplica al modo Pedidos:
+  // weekday = usa Col B.
+  // saturday = usa Col C si existe; si no existe, usa Col B.
+  pedidoReqMode: 'weekday',
+
   // per-mode config: { webAppUrl, lastSynced }
   configs: {
     anaqueles:  { webAppUrl: DEFAULT_WEBAPP_URLS.anaqueles,  lastSynced: null },
@@ -933,6 +939,83 @@ function pendingTileIcon(mode = S.mode) {
 }
 function modeProgressWord(mode = S.mode) {
   return mode === 'pedidos' ? 'Lista(s)' : 'Sección(es)';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PEDIDOS — requeridos por día
+   Col B = requerido base / lunes a viernes.
+   Col C = requerido sábado, solo si el proveedor/producto lo necesita.
+═══════════════════════════════════════════════════════════ */
+function normalizeOptionalNumber(value) {
+  if (value === undefined || value === null) return null;
+  const str = String(value).trim();
+  if (str === '') return null;
+  const n = Number(str);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function isSaturday(date = new Date()) {
+  return date.getDay() === 6;
+}
+
+function activePedidoRequiredMode() {
+  return S.pedidoReqMode === 'saturday' ? 'saturday' : 'weekday';
+}
+
+function effectiveRequired(product) {
+  const base = Number(product?.requiredWeekday ?? product?.required ?? 0) || 0;
+  if (S.mode !== 'pedidos') return base;
+
+  const saturday = normalizeOptionalNumber(product?.requiredSaturday);
+  const mode = activePedidoRequiredMode();
+
+  // Si el proveedor/producto no tiene Col C, se mantiene Col B.
+  if (mode === 'saturday' && saturday !== null) return saturday;
+  return base;
+}
+
+function requiredSourceLabel(product) {
+  if (S.mode !== 'pedidos') return '';
+  const saturday = normalizeOptionalNumber(product?.requiredSaturday);
+  const mode = activePedidoRequiredMode();
+  return (mode === 'saturday' && saturday !== null) ? 'Sábado' : 'L-V';
+}
+
+async function setPedidoReqMode(mode) {
+  if (!['weekday', 'saturday'].includes(mode)) mode = 'weekday';
+  S.pedidoReqMode = mode;
+  try {
+    await dbPut('config', { key: 'pedidos_reqMode', value: mode });
+  } catch (err) {
+    console.warn('No se pudo guardar pedidos_reqMode:', err);
+  }
+  renderHome();
+}
+
+function renderPedidoReqSelector() {
+  if (S.mode !== 'pedidos') return '';
+
+  const current = activePedidoRequiredMode();
+  const activeText = current === 'saturday'
+    ? 'Usando Columna C cuando exista. Si un proveedor/producto no tiene Col C, se usará Columna B.'
+    : 'Usando Columna B como requerido base.';
+
+  return `
+    <div class="card fade-up-2">
+      <div style="font-weight:700;margin-bottom:6px">Requeridos para pedidos</div>
+      <div style="color:var(--muted);font-size:.85rem;line-height:1.45;margin-bottom:12px">
+        Selecciona el tipo de requerido para este pedido. Col B = lunes a viernes / base. Col C = sábado.
+      </div>
+      <div class="row-btns">
+        <button class="btn btn-sm ${S.pedidoReqMode === 'weekday' ? 'btn-blue' : 'btn-ghost'}"
+                onclick="setPedidoReqMode('weekday')">L-V</button>
+        <button class="btn btn-sm ${S.pedidoReqMode === 'saturday' ? 'btn-blue' : 'btn-ghost'}"
+                onclick="setPedidoReqMode('saturday')">Sábado</button>
+      </div>
+      <div style="color:var(--muted);font-size:.78rem;line-height:1.45;margin-top:10px">
+        ${activeText}
+      </div>
+    </div>`;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1011,8 +1094,10 @@ function renderHome() {
       </button>
     </div>`;
 
+  const reqSelector = renderPedidoReqSelector();
+
   if (S.sections.length === 0) {
-    el.innerHTML = syncCard + `
+    el.innerHTML = syncCard + reqSelector + `
       <div class="empty-state fade-up-2">
         <div class="icon">${emoji}</div>
         <h2>Sin catálogo</h2>
@@ -1032,7 +1117,7 @@ function renderHome() {
 
   const sectionWord = modeProgressWord();
 
-  let html = syncCard + `
+  let html = syncCard + reqSelector + `
     <div class="progress-strip fade-up-2">
       <div class="progress-ring">
         <svg width="68" height="68" viewBox="0 0 68 68">
@@ -1272,9 +1357,18 @@ function parseXLSX(ab) {
       const name = nameCell ? String(nameCell.v || '').trim() : '';
       if (!name) continue;
 
-      // Col B (1): required qty
+      // Col B (1): requerido base / lunes a viernes.
       const reqCell = ws[XLSX.utils.encode_cell({ r, c: 1 })];
-      const required = reqCell ? (Number(reqCell.v) || 0) : 0;
+      const requiredWeekday = reqCell ? (Number(reqCell.v) || 0) : 0;
+
+      // Col C (2): requerido sábado. Solo aplica en Pedidos.
+      // Si está vacío, el producto/proveedor se queda usando Col B.
+      const reqSatCell = ws[XLSX.utils.encode_cell({ r, c: 2 })];
+      const requiredSaturday = S.mode === 'pedidos'
+        ? normalizeOptionalNumber(reqSatCell ? reqSatCell.v : undefined)
+        : null;
+
+      const required = requiredWeekday;
 
       // Col E (4): image formula =IMAGE("url")
       const imgCell = ws[XLSX.utils.encode_cell({ r, c: 4 })];
@@ -1315,6 +1409,8 @@ function parseXLSX(ab) {
         id: `${sheetName}_r${r}`,
         name,
         required,
+        requiredWeekday,
+        requiredSaturday,
         imageUrl,
         minMissing,
         packageSize
@@ -1827,10 +1923,12 @@ function renderProduct() {
   document.getElementById('ci-name').textContent = p.name;
   const minMissing = normalizeMinMissing(p.minMissing);
   const packageSize = normalizePackageSize(p.packageSize);
+  const required = effectiveRequired(p);
+  const sourceInfo = S.mode === 'pedidos' ? ` · ${requiredSourceLabel(p)}` : '';
   const packageInfo = S.mode === 'pedidos' && packageSize > 1 ? ` · Paquete: ${packageSize} pz` : '';
   document.getElementById('ci-req').textContent = minMissing > 1
-    ? `Requeridos: ${p.required} · Reportar desde: ${minMissing}${packageInfo}`
-    : `Requeridos: ${p.required}${packageInfo}`;
+    ? `Requeridos: ${required}${sourceInfo} · Reportar desde: ${minMissing}${packageInfo}`
+    : `Requeridos: ${required}${sourceInfo}${packageInfo}`;
 
   // Restore saved values for this product if navigating back.
   const saved = S.counts[S.idx];
@@ -1964,7 +2062,8 @@ function buildSession() {
     // En Pedidos, los cambios/devoluciones también son producto disponible,
     // por eso se suman a las existencias antes de calcular faltantes.
     const availableQty = S.mode === 'pedidos' ? counted + changeQty : counted;
-    const missing = Math.max(0, p.required - availableQty);
+    const required = effectiveRequired(p);
+    const missing = Math.max(0, required - availableQty);
     const minMissing = normalizeMinMissing(p.minMissing);
     const packageSize = normalizePackageSize(p.packageSize);
     const order = S.mode === 'pedidos'
@@ -1983,7 +2082,11 @@ function buildSession() {
              imageUrl: p.imageUrl || '',
              imageDataUrl: imageEmbedded || '',
              imageOfflineUrl: imageEmbedded || '',
-             required: p.required, counted, availableQty, missing, minMissing, packageSize,
+             required,
+             requiredWeekday: p.requiredWeekday ?? p.required,
+             requiredSaturday: p.requiredSaturday ?? null,
+             requiredSource: requiredSourceLabel(p),
+             counted, availableQty, missing, minMissing, packageSize,
              changeQty, hasChange: changeQty > 0,
              orderPackages: order.packages, orderPieces: order.pieces, shouldRestock };
   });
@@ -1994,6 +2097,8 @@ function buildSession() {
     sectionName: S.activeSection.name,
     date: todayStr(),
     completedAt: Date.now(),
+    pedidoReqMode: S.mode === 'pedidos' ? S.pedidoReqMode : null,
+    pedidoReqApplied: S.mode === 'pedidos' ? activePedidoRequiredMode() : null,
     counts
   };
 }
@@ -2051,7 +2156,7 @@ function renderResults() {
                onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
           <div class="missing-info">
             <div class="missing-name">${esc(p.name)}</div>
-            <div class="missing-detail">Cambio/devolución: ${p.changeQty} pz &nbsp;·&nbsp; Hay: ${p.counted} &nbsp;·&nbsp; Disponible: ${p.availableQty} &nbsp;·&nbsp; Req: ${p.required}</div>
+            <div class="missing-detail">Cambio/devolución: ${p.changeQty} pz &nbsp;·&nbsp; Hay: ${p.counted} &nbsp;·&nbsp; Disponible: ${p.availableQty} &nbsp;·&nbsp; Req: ${p.required}${p.requiredSource ? ` (${p.requiredSource})` : ''}</div>
           </div>
           <div class="missing-qty change" title="pz">${p.changeQty}<span style="font-size:.58rem;margin-left:2px">pz</span></div>
         </div>`).join('');
@@ -2075,7 +2180,7 @@ function renderResults() {
                onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
           <div class="missing-info">
             <div class="missing-name">${esc(p.name)}</div>
-            <div class="missing-detail">${availabilityText} &nbsp;·&nbsp; Req: ${p.required} &nbsp;·&nbsp; Faltan: ${p.missing}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}${packageText}</div>
+            <div class="missing-detail">${availabilityText} &nbsp;·&nbsp; Req: ${p.required}${p.requiredSource ? ` (${p.requiredSource})` : ''} &nbsp;·&nbsp; Faltan: ${p.missing}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}${packageText}</div>
           </div>
           <div class="missing-qty" title="${qtyLabel}">${qtyMain}<span style="font-size:.58rem;margin-left:2px">${qtyLabel}</span></div>
         </div>`;
@@ -2174,7 +2279,7 @@ async function makePDF() {
           <span class="chip">Hay: <strong>${p.counted}</strong></span>
           <span class="chip">Cambios: <strong>${p.changeQty}</strong></span>
           <span class="chip">Disponible: <strong>${p.availableQty}</strong></span>
-          <span class="chip">Req: <strong>${p.required}</strong></span>
+          <span class="chip">Req: <strong>${p.required}</strong>${p.requiredSource ? ` ${p.requiredSource}` : ''}</span>
           <span class="chip">Faltan: <strong>${p.missing}</strong></span>
         </div>
       </article>`).join('');
@@ -2219,7 +2324,7 @@ async function makePDF() {
 
           <div class="meta-row">
             ${availabilityChips}
-            <span class="chip">Req: <strong>${p.required}</strong></span>
+            <span class="chip">Req: <strong>${p.required}</strong>${p.requiredSource ? ` ${p.requiredSource}` : ''}</span>
             <span class="chip">Faltan: <strong>${p.missing}</strong></span>
             ${minChip}
           </div>
@@ -2476,28 +2581,48 @@ function normalizeCatalogSections(sections) {
   return (sections || []).map((sec, secIdx) => ({
     ...sec,
     id: sec.id || `sec_${String(sec.name || 'seccion').replace(/\W+/g, '_')}_${secIdx}_${Date.now()}`,
-    products: (sec.products || []).map((p, prodIdx) => ({
-      ...p,
-      id: p.id || `${sec.name || 'sec'}_p${prodIdx}`,
-      required: Number(p.required) || 0,
-      imageUrl: p.imageUrl || p.image || p.img || p.foto || p.urlImagen || '',
-      imageDataUrl: p.imageDataUrl || p.imageBase64 || p.base64Image || '',
-      imageOfflineUrl: p.imageOfflineUrl || p.imageDataUrl || p.imageBase64 || p.base64Image || '',
-      packageSize: normalizePackageSize(
-        p.packageSize ??
-        p.packSize ??
-        p.unitsPerPackage ??
-        p.unidadesPorPaquete ??
-        p.paquete
-      ),
-      minMissing: normalizeMinMissing(
-        p.minMissing ??
-        p.minToShow ??
-        p.threshold ??
-        p.umbralFaltante ??
-        p.minimoSurtir
-      )
-    }))
+    products: (sec.products || []).map((p, prodIdx) => {
+      const requiredWeekday = Number(
+        p.requiredWeekday ??
+        p.requiredBase ??
+        p.requiredLunesViernes ??
+        p.requeridoLunesViernes ??
+        p.required ??
+        0
+      ) || 0;
+
+      const requiredSaturday = normalizeOptionalNumber(
+        p.requiredSaturday ??
+        p.requiredSabado ??
+        p.requeridoSabado ??
+        p.saturdayRequired
+      );
+
+      return {
+        ...p,
+        id: p.id || `${sec.name || 'sec'}_p${prodIdx}`,
+        required: requiredWeekday,
+        requiredWeekday,
+        requiredSaturday,
+        imageUrl: p.imageUrl || p.image || p.img || p.foto || p.urlImagen || '',
+        imageDataUrl: p.imageDataUrl || p.imageBase64 || p.base64Image || '',
+        imageOfflineUrl: p.imageOfflineUrl || p.imageDataUrl || p.imageBase64 || p.base64Image || '',
+        packageSize: normalizePackageSize(
+          p.packageSize ??
+          p.packSize ??
+          p.unitsPerPackage ??
+          p.unidadesPorPaquete ??
+          p.paquete
+        ),
+        minMissing: normalizeMinMissing(
+          p.minMissing ??
+          p.minToShow ??
+          p.threshold ??
+          p.umbralFaltante ??
+          p.minimoSurtir
+        )
+      };
+    })
   }));
 }
 
@@ -2553,6 +2678,9 @@ async function boot() {
         if (row.key === `${m}_webAppUrl` && row.value)  S.configs[m].webAppUrl  = row.value;
         if (row.key === `${m}_lastSynced`)              S.configs[m].lastSynced = row.value || null;
       });
+      if (row.key === 'pedidos_reqMode') {
+        S.pedidoReqMode = row.value === 'saturday' ? 'saturday' : 'weekday';
+      }
       // Back-compat: old non-namespaced key belongs to anaqueles
       if (row.key === 'webAppUrl' && row.value) S.configs.anaqueles.webAppUrl = row.value;
       if (row.key === 'lastSynced')             S.configs.anaqueles.lastSynced = S.configs.anaqueles.lastSynced || row.value || null;
