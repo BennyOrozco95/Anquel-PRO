@@ -406,6 +406,26 @@
     .results-section-title:first-child { margin-top: 0; }
     .results-section-title.changes { color: var(--red); }
     .missing-qty.change { background: var(--red); }
+    .missing-qty.package {
+      width: 66px; height: 54px; border-radius: 14px;
+      flex-direction: column; line-height: 1;
+    }
+    .missing-qty.package span {
+      font-size: .49rem; margin-left: 0; margin-top: 4px;
+      letter-spacing: .04em; text-transform: uppercase; font-family: var(--font);
+    }
+    .report-package-badge {
+      display: inline-flex; align-items: center;
+      margin: 5px 4px 0 0; padding: 3px 8px;
+      border-radius: 999px; border: 1px solid #f59e0b;
+      background: #fffbeb; color: #92400e;
+      font-size: .68rem; font-weight: 900; letter-spacing: .04em;
+      text-transform: uppercase; white-space: nowrap;
+    }
+    .report-package-total {
+      display: inline-flex; align-items: center;
+      margin-top: 5px; color: var(--ink-3); font-weight: 800;
+    }
 
     .ok-state { text-align: center; padding: 48px 20px; }
     .ok-state .ok-icon { font-size: 5rem; margin-bottom: 16px; }
@@ -612,7 +632,7 @@
      MODE SELECTOR (first screen)
 ══════════════════════════════════════════════════════ -->
 <div class="screen off" id="screen-mode">
-  <div class="app-version" id="app-version">Ver. 1.0.0.5</div>
+  <div class="app-version" id="app-version">Ver. 1.0.0.7</div>
   <div class="mode-header fade-up">
     <div class="app-logo">🏪</div>
     <h1>Gestión de Tienda</h1>
@@ -865,7 +885,7 @@ async function dbClear(store) {
 /* ═══════════════════════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════════════════════ */
-const APP_VERSION = '1.0.0.5';
+const APP_VERSION = '1.0.0.7';
 const DEFAULT_WEBAPP_URLS = {
   anaqueles:  'https://script.google.com/macros/s/AKfycbxSjmd4JFGRHSWtdsEYZbip298KWEtduVfqdpfGee5c2cPK5-mEnAkaeFWGsZvR9RcE/exec',
   pedidos:    'https://script.google.com/macros/s/AKfycbz6ymKwn4okx0kcaZjXa1mV9oT4JmtR64YbUSPLJQ-5_X6-sfyWKPwoEJsT9SYC-j7KKQ/exec',
@@ -904,7 +924,8 @@ const S = {
 
   // results
   missing: [],
-  changesList: []
+  changesList: [],
+  currentSessionId: null
 };
 
 // Shorthand: always refers to the active mode's config
@@ -1903,6 +1924,7 @@ function startCount(sectionId) {
   S.activeCountField = 'stock';
   S.counts = [];
   S.changes = [];
+  S.currentSessionId = null;
 
   nav('count');
   renderProduct();
@@ -2043,7 +2065,12 @@ async function finishCount() {
 
   try {
     await dbPut('sessions', session);
-    S.sessions.push(session);
+    S.currentSessionId = session.id;
+
+    const existingIndex = S.sessions.findIndex(s => s.id === session.id);
+    if (existingIndex >= 0) S.sessions[existingIndex] = session;
+    else S.sessions.push(session);
+
     // Keep only last 100 sessions
     if (S.sessions.length > 100) {
       const old = S.sessions.shift();
@@ -2052,6 +2079,23 @@ async function finishCount() {
   } catch (e) { console.warn('Session save failed', e); }
 
   renderResults();
+}
+
+function returnToCount() {
+  if (!S.activeSection || !S.products.length) {
+    toast('No hay un conteo activo para corregir', 2500);
+    renderHome();
+    return;
+  }
+
+  S.idx = 0;
+  S.entered = '';
+  S.changeEntered = '';
+  S.activeCountField = 'stock';
+
+  nav('count');
+  renderProduct();
+  toast('Conteo abierto para corregir', 1800);
 }
 
 function exitToHome() {
@@ -2111,7 +2155,7 @@ function buildSession() {
              orderPackages: order.packages, orderPieces: order.pieces, shouldRestock };
   });
   return {
-    id: `sess_${S.mode}_${Date.now()}`,
+    id: S.currentSessionId || `sess_${S.mode}_${Date.now()}`,
     mode: S.mode,
     sectionId: S.activeSection.id,
     sectionName: S.activeSection.name,
@@ -2186,10 +2230,11 @@ function renderResults() {
       if (isPedidos) html += `<div class="results-section-title">📦 Pedido</div>`;
       html += m.map(p => {
         const packageSize = normalizePackageSize(p.packageSize);
-        const qtyMain = isPedidos && packageSize > 1 ? p.orderPackages : p.missing;
-        const qtyLabel = isPedidos && packageSize > 1 ? 'paq' : 'pz';
-        const packageText = isPedidos && packageSize > 1
-          ? ` &nbsp;·&nbsp; Paquete: ${packageSize} pz &nbsp;·&nbsp; Pedir: ${p.orderPieces} pz`
+        const usePackages = isPedidos && packageSize > 1;
+        const qtyMain = usePackages ? p.orderPackages : p.missing;
+        const qtyLabel = usePackages ? (qtyMain === 1 ? 'paquete' : 'paquetes') : 'pz';
+        const packageText = usePackages
+          ? ` <span class="report-package-badge">Paquete de ${packageSize} pz</span><span class="report-package-total">Total: ${p.orderPieces} pz</span>`
           : '';
         const availabilityText = isPedidos
           ? `Hay: ${p.counted}${p.changeQty > 0 ? ` &nbsp;·&nbsp; Cambios: ${p.changeQty}` : ''} &nbsp;·&nbsp; Disponible: ${p.availableQty}`
@@ -2202,7 +2247,7 @@ function renderResults() {
             <div class="missing-name">${esc(p.name)}</div>
             <div class="missing-detail">${availabilityText} &nbsp;·&nbsp; Req: ${p.required}${p.requiredSource ? ` (${p.requiredSource})` : ''} &nbsp;·&nbsp; Faltan: ${p.missing}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}${packageText}</div>
           </div>
-          <div class="missing-qty" title="${qtyLabel}">${qtyMain}<span style="font-size:.58rem;margin-left:2px">${qtyLabel}</span></div>
+          <div class="missing-qty ${usePackages ? 'package' : ''}" title="${usePackages ? `${qtyMain} ${qtyLabel} de ${packageSize} pz cada uno` : qtyLabel}">${qtyMain}<span>${qtyLabel}</span></div>
         </div>`;
       }).join('');
     }
@@ -2218,10 +2263,16 @@ function renderResults() {
         <button class="btn btn-blue" onclick="makePDF()">📄 PDF</button>
         <button class="btn btn-wa"   onclick="sendWA()">💬 WhatsApp</button>
       </div>
-      <button class="btn btn-ghost" onclick="renderHome()">← Volver al inicio</button>`;
+      <div class="row-btns">
+        <button class="btn btn-ghost" onclick="returnToCount()">← Corregir conteo</button>
+        <button class="btn btn-ghost" onclick="renderHome()">🏠 Inicio</button>
+      </div>`;
   } else {
     actions.innerHTML = `
-      <button class="btn btn-blue btn-lg" onclick="renderHome()">← Volver al inicio</button>`;
+      <div class="row-btns">
+        <button class="btn btn-blue" onclick="returnToCount()">← Corregir conteo</button>
+        <button class="btn btn-ghost" onclick="renderHome()">🏠 Inicio</button>
+      </div>`;
   }
 }
 
@@ -2308,8 +2359,11 @@ async function makePDF() {
       const packageSize = normalizePackageSize(p.packageSize);
       const usePackages = isPedidos && packageSize > 1;
       const qtyMain = usePackages ? p.orderPackages : p.missing;
-      const qtyUnit = usePackages ? 'paq' : 'pz';
+      const qtyUnit = usePackages ? (qtyMain === 1 ? 'paquete' : 'paquetes') : 'pz';
       const qtyLabelText = isPedidos ? 'Pedir' : 'Surtir';
+      const packageNote = usePackages
+        ? `<div class="package-note"><strong>PAQUETE DE ${packageSize} PZ</strong><span>Se pide ${qtyMain} ${qtyUnit}; cada paquete contiene ${packageSize} pz. Total: ${p.orderPieces} pz.</span></div>`
+        : '';
 
       return `
         <article class="item-card">
@@ -2324,6 +2378,7 @@ async function makePDF() {
                 <span class="order-label">${qtyLabelText}</span>
                 <span class="order-value">${qtyMain}<small>${qtyUnit}</small></span>
               </div>
+              ${packageNote}
             </div>
           </div>
         </article>`;
@@ -2383,7 +2438,9 @@ async function makePDF() {
 
     .meta-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
     .chip{font-size:11.5px;line-height:1.15;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:4px 8px}
-    .package-note{margin-top:6px;font-size:11.5px;line-height:1.25;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:5px 8px}
+    .package-note{margin-top:7px;font-size:11.5px;line-height:1.25;color:#92400e;background:#fffbeb;border:1.5px solid #f59e0b;border-radius:9px;padding:6px 8px;font-weight:700}
+    .package-note strong{display:block;font-size:12px;letter-spacing:.05em;color:#78350f;margin-bottom:2px}
+    .package-note span{display:block;color:#92400e;font-weight:700}
 
     .foot{margin-top:8px;font-size:10.5px;line-height:1.3;color:#94a3b8;text-align:center}
 
@@ -2531,7 +2588,9 @@ function sendWA_Pedidos() {
       const packageSize = normalizePackageSize(p.packageSize);
       const changeNote = p.changeQty > 0 ? ` · hay ${p.counted} + cambios ${p.changeQty}` : '';
       if (packageSize > 1) {
-        txt += `${i + 1}. ${p.name} — *${p.orderPackages} paq.* (${p.orderPieces} pz · paquete ${packageSize}${changeNote})\n`;
+        const packWord = p.orderPackages === 1 ? 'PAQUETE' : 'PAQUETES';
+        const availabilityNote = changeNote ? ` · ${changeNote.trim().replace(/^·\s*/, '')}` : '';
+        txt += `${i + 1}. ${p.name} — *${p.orderPackages} ${packWord}* _(cada paquete = ${packageSize} unidades; total ${p.orderPieces} unidades${availabilityNote})_\n`;
       } else {
         txt += `${i + 1}. ${p.name} — *${p.missing} pz.*${changeNote ? ` (${changeNote.trim().replace(/^·\s*/, '')})` : ''}\n`;
       }
@@ -2662,6 +2721,20 @@ function hideVeil() {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   ORIENTATION LOCK
+═══════════════════════════════════════════════════════════ */
+async function lockPortraitOrientation() {
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      await screen.orientation.lock('portrait-primary');
+    }
+  } catch (err) {
+    // Algunos navegadores solo permiten bloquear orientación en modo PWA/standalone.
+    console.info('Bloqueo de orientación no disponible en este contexto:', err?.message || err);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
    BOOTSTRAP
 ═══════════════════════════════════════════════════════════ */
 async function boot() {
@@ -2689,6 +2762,11 @@ async function boot() {
 
   const versionEl = document.getElementById('app-version');
   if (versionEl) versionEl.textContent = `Ver. ${APP_VERSION}`;
+
+  lockPortraitOrientation();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) lockPortraitOrientation();
+  });
 
   // Always start at the mode selector
   nav('mode');
