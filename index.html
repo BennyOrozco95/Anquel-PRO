@@ -277,6 +277,15 @@
       width: 100%; height: 100%; object-fit: contain;
     }
 
+    .prod-location {
+      width: min(360px, 100%); margin-bottom: 10px;
+      padding: 9px 14px; border-radius: 12px;
+      background: rgba(250,204,21,.14); border: 1px solid rgba(250,204,21,.42);
+      color: #fde047; text-align: center;
+      font-size: .78rem; font-weight: 800; letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+
     .prod-name {
       font-size: 1.15rem; font-weight: 700; text-align: center;
       margin: 14px 10px 4px; letter-spacing: -.02em; line-height: 1.3;
@@ -284,6 +293,14 @@
     .prod-req {
       font-size: .8rem; color: rgba(255,255,255,.35);
       margin-bottom: 14px; font-family: var(--mono);
+    }
+
+    @media (max-height: 700px) {
+      .count-stage { padding: 10px 16px; }
+      .prod-location { margin-bottom: 7px; padding: 7px 12px; }
+      .prod-img-frame { width: min(130px, 34vw); height: min(130px, 34vw); }
+      .prod-name { margin-top: 9px; }
+      .prod-req { margin-bottom: 8px; }
     }
 
     .count-fields {
@@ -405,6 +422,7 @@
     }
     .results-section-title:first-child { margin-top: 0; }
     .results-section-title.changes { color: var(--red); }
+    .results-section-title.daily { color: var(--blue); }
     .missing-qty.change { background: var(--red); }
     .missing-qty.package {
       width: 66px; height: 54px; border-radius: 14px;
@@ -426,6 +444,23 @@
       display: inline-flex; align-items: center;
       margin-top: 5px; color: var(--ink-3); font-weight: 800;
     }
+    .daily-count-group {
+      margin-bottom: 14px; overflow: hidden;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    .daily-count-location {
+      padding: 9px 12px; background: var(--blue-pale); color: var(--blue-dk);
+      font-size: .78rem; font-weight: 900; letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .daily-count-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-top: 1px solid var(--border);
+    }
+    .daily-count-name { flex: 1; min-width: 0; font-size: .88rem; font-weight: 650; }
+    .daily-count-value { font-family: var(--mono); font-size: 1rem; font-weight: 700; color: var(--ink); }
+    .daily-count-change { font-size: .7rem; color: var(--red); font-weight: 800; }
 
     .ok-state { text-align: center; padding: 48px 20px; }
     .ok-state .ok-icon { font-size: 5rem; margin-bottom: 16px; }
@@ -632,7 +667,7 @@
      MODE SELECTOR (first screen)
 ══════════════════════════════════════════════════════ -->
 <div class="screen off" id="screen-mode">
-  <div class="app-version" id="app-version">Ver. 1.0.0.7</div>
+  <div class="app-version" id="app-version">Ver. 1.1.0.0</div>
   <div class="mode-header fade-up">
     <div class="app-logo">🏪</div>
     <h1>Gestión de Tienda</h1>
@@ -714,7 +749,7 @@
       <div class="settings-group-title" id="settings-import-label">Importar Excel — Anaqueles</div>
       <div class="settings-row">
         <label>Cargar .xlsx manualmente</label>
-        <div class="hint">Col A=Nombre, B=Requeridos, E=Imagen, F=Activo (Yes/No), G=Mostrar si faltan desde, H=Unidades por paquete (Pedidos).</div>
+        <div class="hint">Col A=Nombre, B=Requeridos, C=Sábado, E=Imagen, F=Activo, G=Mínimo faltante, H=Unidades por paquete, I=Ubicación y J=ID de agrupación opcional. La hoja “Calendario Pedidos” configura proveedores por día.</div>
         <button class="btn btn-ghost" onclick="document.getElementById('file-pick').click()">
           📂 Seleccionar archivo .xlsx
         </button>
@@ -759,6 +794,7 @@
   </div>
 
   <div class="count-stage">
+    <div class="prod-location" id="ci-location">📍 Ubicación no asignada</div>
     <div class="prod-img-frame">
       <img id="ci-img" src="" alt=""
            onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 80 80%22><rect width=%2280%22 height=%2280%22 fill=%22%23151d2e%22 rx=%228%22/><text x=%2240%22 y=%2248%22 text-anchor=%22middle%22 fill=%22%234a5568%22 font-size=%2232%22>📦</text></svg>'">
@@ -885,7 +921,7 @@ async function dbClear(store) {
 /* ═══════════════════════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════════════════════ */
-const APP_VERSION = '1.0.0.7';
+const APP_VERSION = '1.1.0.0';
 const DEFAULT_WEBAPP_URLS = {
   anaqueles:  'https://script.google.com/macros/s/AKfycbxSjmd4JFGRHSWtdsEYZbip298KWEtduVfqdpfGee5c2cPK5-mEnAkaeFWGsZvR9RcE/exec',
   pedidos:    'https://script.google.com/macros/s/AKfycbz6ymKwn4okx0kcaZjXa1mV9oT4JmtR64YbUSPLJQ-5_X6-sfyWKPwoEJsT9SYC-j7KKQ/exec',
@@ -925,6 +961,7 @@ const S = {
   // results
   missing: [],
   changesList: [],
+  dailyCount: [],
   currentSessionId: null
 };
 
@@ -960,6 +997,64 @@ function pendingTileIcon(mode = S.mode) {
 }
 function modeProgressWord(mode = S.mode) {
   return mode === 'pedidos' ? 'Lista(s)' : 'Sección(es)';
+}
+
+const ORDER_DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+function normalizeTextKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function normalizeLocation(value) {
+  return String(value || '').trim() || 'Ubicación no asignada';
+}
+
+function productGroupKey(product) {
+  const explicit = product?.groupId || product?.groupKey || product?.productGroup || '';
+  return normalizeTextKey(explicit || product?.name || product?.id || 'producto');
+}
+
+function orderProductsByLocation(products) {
+  const groups = new Map();
+  (products || []).forEach(product => {
+    const location = normalizeLocation(product.location);
+    if (!groups.has(location)) groups.set(location, []);
+    groups.get(location).push(product);
+  });
+  return Array.from(groups.values()).flat();
+}
+
+function normalizeOrderDays(value) {
+  const aliases = {
+    domingo: 0, dom: 0, sunday: 0,
+    lunes: 1, lun: 1, monday: 1,
+    martes: 2, mar: 2, tuesday: 2,
+    miercoles: 3, mie: 3, wednesday: 3,
+    jueves: 4, jue: 4, thursday: 4,
+    viernes: 5, vie: 5, friday: 5,
+    sabado: 6, sab: 6, saturday: 6
+  };
+  const values = Array.isArray(value) ? value : String(value || '').split(/[,;|]/);
+  const days = values.map(day => {
+    const n = Number(day);
+    if (Number.isInteger(n) && n >= 0 && n <= 6) return n;
+    return aliases[normalizeTextKey(day)];
+  }).filter(day => day !== undefined);
+  return [...new Set(days)].sort((a, b) => a - b);
+}
+
+function sectionIsScheduledToday(section, date = new Date()) {
+  if (S.mode !== 'pedidos' || section?.scheduleConfigured !== true) return true;
+  return normalizeOrderDays(section.orderDays).includes(date.getDay());
+}
+
+function sectionsForToday(date = new Date()) {
+  return S.sections.filter(section => sectionIsScheduledToday(section, date));
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1039,6 +1134,22 @@ function renderPedidoReqSelector() {
     </div>`;
 }
 
+function renderOrderScheduleStatus(visibleSections) {
+  if (S.mode !== 'pedidos') return '';
+
+  const configured = S.sections.some(section => section.scheduleConfigured === true);
+  const dayName = ORDER_DAY_NAMES[new Date().getDay()];
+  const detail = configured
+    ? `${visibleSections.length} de ${S.sections.length} proveedor(es) programado(s)`
+    : 'Calendario aún no configurado; se muestran todos los proveedores';
+
+  return `
+    <div class="card fade-up-2" style="border-left:4px solid var(--blue)">
+      <div style="font-weight:800">📅 Pedidos del ${esc(dayName)}</div>
+      <div style="color:var(--muted);font-size:.82rem;line-height:1.4;margin-top:4px">${detail}</div>
+    </div>`;
+}
+
 /* ═══════════════════════════════════════════════════════════
    DB HELPER — delete all records of a given mode
 ═══════════════════════════════════════════════════════════ */
@@ -1087,8 +1198,12 @@ function renderHome() {
   document.getElementById('home-title').textContent = label;
 
   const today = todayStr();
+  const visibleSections = sectionsForToday();
+  const visibleSectionIds = new Set(visibleSections.map(section => section.id));
   const doneSectionIds = new Set(
-    S.sessions.filter(s => s.date === today).map(s => s.sectionId)
+    S.sessions
+      .filter(s => s.date === today && visibleSectionIds.has(s.sectionId))
+      .map(s => s.sectionId)
   );
   const el = document.getElementById('home-body');
 
@@ -1116,9 +1231,10 @@ function renderHome() {
     </div>`;
 
   const reqSelector = renderPedidoReqSelector();
+  const scheduleStatus = renderOrderScheduleStatus(visibleSections);
 
   if (S.sections.length === 0) {
-    el.innerHTML = syncCard + reqSelector + `
+    el.innerHTML = syncCard + reqSelector + scheduleStatus + `
       <div class="empty-state fade-up-2">
         <div class="icon">${emoji}</div>
         <h2>Sin catálogo</h2>
@@ -1130,15 +1246,26 @@ function renderHome() {
     return;
   }
 
+  if (S.mode === 'pedidos' && visibleSections.length === 0) {
+    const dayName = ORDER_DAY_NAMES[new Date().getDay()];
+    el.innerHTML = syncCard + reqSelector + scheduleStatus + `
+      <div class="empty-state fade-up-2">
+        <div class="icon">📅</div>
+        <h2>Sin pedidos programados</h2>
+        <p>No hay proveedores habilitados para el ${esc(dayName)} en la hoja “Calendario Pedidos”.</p>
+      </div>`;
+    return;
+  }
+
   const done  = doneSectionIds.size;
-  const total = S.sections.length;
+  const total = visibleSections.length;
   const pct   = total ? (done / total) * 100 : 0;
   const r = 24, circ = 2 * Math.PI * r;
   const offset = circ * (1 - pct / 100);
 
   const sectionWord = modeProgressWord();
 
-  let html = syncCard + reqSelector + `
+  let html = syncCard + reqSelector + scheduleStatus + `
     <div class="progress-strip fade-up-2">
       <div class="progress-ring">
         <svg width="68" height="68" viewBox="0 0 68 68">
@@ -1165,7 +1292,7 @@ function renderHome() {
     <div class="sections-grid fade-up-2">
   `;
 
-  S.sections.forEach(sec => {
+  visibleSections.forEach(sec => {
     const isDone = doneSectionIds.has(sec.id);
     html += `
       <div class="shelf-tile ${isDone ? 'done' : 'pending'}" onclick="startCount('${sec.id}')">
@@ -1355,11 +1482,52 @@ function onFilePick(ev) {
 }
 
 /** Sheets to skip — utility sheets, not product sections */
-const SKIP_SHEETS = new Set(['Menu', 'Hoja 12', 'Hoja 13', 'Hoja 14', 'Hoja 15']);
+const SKIP_SHEETS = new Set([
+  'Menu', 'Hoja 12', 'Hoja 13', 'Hoja 14', 'Hoja 15', 'Demo',
+  'Calendario Pedidos', 'Calendario de Pedidos', 'CalendarioPedidos'
+]);
+
+function isScheduleActiveValue(value) {
+  if (value === true || value === 1) return true;
+  return ['si', 'yes', 'x', '1', 'true', 'activo'].includes(normalizeTextKey(value));
+}
+
+function parseOrderScheduleWorkbook(wb) {
+  const scheduleNames = new Set([
+    normalizeTextKey('Calendario Pedidos'),
+    normalizeTextKey('Calendario de Pedidos'),
+    normalizeTextKey('CalendarioPedidos')
+  ]);
+  const sheetName = wb.SheetNames.find(name => scheduleNames.has(normalizeTextKey(name)));
+  const byProvider = new Map();
+  if (!sheetName) return { configured: false, byProvider };
+
+  const ws = wb.Sheets[sheetName];
+  const ref = ws?.['!ref'];
+  if (!ref) return { configured: true, byProvider };
+
+  const range = XLSX.utils.decode_range(ref);
+  const dayByColumn = [1, 2, 3, 4, 5, 6, 0];
+  for (let r = 1; r <= range.e.r; r++) {
+    const providerCell = ws[XLSX.utils.encode_cell({ r, c: 0 })];
+    const provider = providerCell ? String(providerCell.v || '').trim() : '';
+    if (!provider) continue;
+
+    const days = new Set(byProvider.get(normalizeTextKey(provider)) || []);
+    dayByColumn.forEach((day, index) => {
+      const cell = ws[XLSX.utils.encode_cell({ r, c: index + 1 })];
+      if (cell && isScheduleActiveValue(cell.v)) days.add(day);
+    });
+    byProvider.set(normalizeTextKey(provider), [...days].sort((a, b) => a - b));
+  }
+
+  return { configured: true, byProvider };
+}
 
 function parseXLSX(ab) {
   const wb = XLSX.read(ab, { type: 'array', cellFormula: true });
   const sections = [];
+  const schedule = parseOrderScheduleWorkbook(wb);
 
   for (const sheetName of wb.SheetNames) {
     if (SKIP_SHEETS.has(sheetName)) continue;
@@ -1426,6 +1594,14 @@ function parseXLSX(ab) {
       const packageCell = ws[XLSX.utils.encode_cell({ r, c: 7 })];
       const packageSize = normalizePackageSize(packageCell ? packageCell.v : undefined);
 
+      // Col I (8): ubicación visible durante el conteo.
+      const locationCell = ws[XLSX.utils.encode_cell({ r, c: 8 })];
+      const location = locationCell ? String(locationCell.v || '').trim() : '';
+
+      // Col J (9): ID opcional para sumar el mismo producto entre ubicaciones.
+      const groupCell = ws[XLSX.utils.encode_cell({ r, c: 9 })];
+      const groupId = groupCell ? String(groupCell.v || '').trim() : '';
+
       products.push({
         id: `${sheetName}_r${r}`,
         name,
@@ -1434,7 +1610,9 @@ function parseXLSX(ab) {
         requiredSaturday,
         imageUrl,
         minMissing,
-        packageSize
+        packageSize,
+        location,
+        groupId
       });
     }
 
@@ -1443,6 +1621,8 @@ function parseXLSX(ab) {
         id: `sec_${sheetName.replace(/\W+/g, '_')}_${Date.now()}`,
         name: sheetName,
         products,
+        scheduleConfigured: schedule.configured,
+        orderDays: schedule.byProvider.get(normalizeTextKey(sheetName)) || [],
         importedAt: Date.now()
       });
     }
@@ -1458,7 +1638,7 @@ function showPreview(sections) {
     <div class="detected-item">
       <span class="di-icon">📋</span>
       <span class="di-name">${esc(sec.name)}</span>
-      <span class="di-count">${sec.products.length} productos</span>
+      <span class="di-count">${sec.products.length} productos${sec.scheduleConfigured ? ` · ${normalizeOrderDays(sec.orderDays).length} día(s)` : ''}</span>
     </div>
   `).join('');
 
@@ -1917,13 +2097,16 @@ function startCount(sectionId) {
   if (!sec || !sec.products.length) { toast('Sección sin productos', 2000); return; }
 
   S.activeSection = sec;
-  S.products = [...sec.products];
+  S.products = S.mode === 'pedidos'
+    ? orderProductsByLocation(sec.products)
+    : [...sec.products];
   S.idx = 0;
   S.entered = '';
   S.changeEntered = '';
   S.activeCountField = 'stock';
   S.counts = [];
   S.changes = [];
+  S.dailyCount = [];
   S.currentSessionId = null;
 
   nav('count');
@@ -1943,14 +2126,21 @@ function renderProduct() {
   // Product
   document.getElementById('ci-img').src = productImageSrc(p);
   document.getElementById('ci-name').textContent = p.name;
+  document.getElementById('ci-location').textContent = `📍 ${normalizeLocation(p.location)}`;
   const minMissing = normalizeMinMissing(p.minMissing);
   const packageSize = normalizePackageSize(p.packageSize);
   const required = effectiveRequired(p);
+  const groupedLocations = S.mode === 'pedidos'
+    ? S.products.filter(item => productGroupKey(item) === productGroupKey(p))
+    : [p];
+  const sharedInfo = groupedLocations.length > 1
+    ? ` · Total entre ${groupedLocations.length} ubicaciones`
+    : '';
   const sourceInfo = S.mode === 'pedidos' ? ` · ${requiredSourceLabel(p)}` : '';
   const packageInfo = S.mode === 'pedidos' && packageSize > 1 ? ` · Paquete: ${packageSize} pz` : '';
   document.getElementById('ci-req').textContent = minMissing > 1
-    ? `Requeridos: ${required}${sourceInfo} · Reportar desde: ${minMissing}${packageInfo}`
-    : `Requeridos: ${required}${sourceInfo}${packageInfo}`;
+    ? `Objetivo total: ${required}${sourceInfo} · Reportar desde: ${minMissing}${packageInfo}${sharedInfo}`
+    : `Objetivo total: ${required}${sourceInfo}${packageInfo}${sharedInfo}`;
 
   // Restore saved values for this product if navigating back.
   // Important: if the user entered 0, restore it as "0", not as empty.
@@ -2034,8 +2224,11 @@ function saveCurrentCount() {
 function prevProduct() {
   if (S.idx === 0) return;
   saveCurrentCount();
+  const previousLocation = normalizeLocation(S.products[S.idx].location);
   S.idx--;
   renderProduct();
+  const currentLocation = normalizeLocation(S.products[S.idx].location);
+  if (currentLocation !== previousLocation) toast(`📍 ${currentLocation}`, 1800);
 }
 
 function nextProduct() {
@@ -2051,8 +2244,11 @@ function nextProduct() {
   saveCurrentCount();
 
   if (S.idx < S.products.length - 1) {
+    const previousLocation = normalizeLocation(S.products[S.idx].location);
     S.idx++;
     renderProduct();
+    const currentLocation = normalizeLocation(S.products[S.idx].location);
+    if (currentLocation !== previousLocation) toast(`📍 Ahora: ${currentLocation}`, 2200);
   } else {
     finishCount();
   }
@@ -2062,6 +2258,7 @@ async function finishCount() {
   const session = buildSession();
   S.missing = session.counts.filter(c => c.shouldRestock);
   S.changesList = S.mode === 'pedidos' ? session.counts.filter(c => c.hasChange) : [];
+  S.dailyCount = session.locationCounts || [];
 
   try {
     await dbPut('sessions', session);
@@ -2120,40 +2317,110 @@ async function confirmResetProgress() {
 }
 
 function buildSession() {
-  const counts = S.products.map((p, i) => {
+  // Primero conservamos exactamente lo capturado en cada ubicación.
+  const locationCounts = S.products.map((p, i) => {
     const counted = S.counts[i] ?? 0;
     const changeQty = S.mode === 'pedidos' ? (S.changes[i] ?? 0) : 0;
-    // En Pedidos, los cambios/devoluciones también son producto disponible,
-    // por eso se suman a las existencias antes de calcular faltantes.
     const availableQty = S.mode === 'pedidos' ? counted + changeQty : counted;
     const required = effectiveRequired(p);
-    const missing = Math.max(0, required - availableQty);
-    const minMissing = normalizeMinMissing(p.minMissing);
-    const packageSize = normalizePackageSize(p.packageSize);
-    const order = S.mode === 'pedidos'
-      ? calcOrderForPackage(missing, packageSize)
-      : { packages: missing, pieces: missing, packageSize: 1 };
-
-    // Anaqueles / Inventario reportan piezas faltantes. Pedidos reporta paquetes calculados,
-    // y cuando el redondeo da 0 paquetes no se agrega al pedido.
-    const shouldRestock = S.mode === 'pedidos'
-      ? missing >= minMissing && (packageSize > 1 ? order.packages > 0 : missing > 0)
-      : missing >= minMissing;
-
     const imageEmbedded = p.imageOfflineUrl || p.imageDataUrl || (isDataUrl(p.imageUrl) ? p.imageUrl : '');
 
-    return { productId: p.id, name: p.name,
-             imageUrl: p.imageUrl || '',
-             imageDataUrl: imageEmbedded || '',
-             imageOfflineUrl: imageEmbedded || '',
-             required,
-             requiredWeekday: p.requiredWeekday ?? p.required,
-             requiredSaturday: p.requiredSaturday ?? null,
-             requiredSource: requiredSourceLabel(p),
-             counted, availableQty, missing, minMissing, packageSize,
-             changeQty, hasChange: changeQty > 0,
-             orderPackages: order.packages, orderPieces: order.pieces, shouldRestock };
+    return {
+      productId: p.id,
+      groupKey: S.mode === 'pedidos' ? productGroupKey(p) : `row:${p.id || i}`,
+      groupId: p.groupId || '',
+      name: p.name,
+      location: normalizeLocation(p.location),
+      imageUrl: p.imageUrl || '',
+      imageDataUrl: imageEmbedded || '',
+      imageOfflineUrl: imageEmbedded || '',
+      required,
+      requiredWeekday: Number(p.requiredWeekday ?? p.required ?? 0) || 0,
+      requiredSaturday: normalizeOptionalNumber(p.requiredSaturday),
+      counted,
+      changeQty,
+      availableQty,
+      minMissing: normalizeMinMissing(p.minMissing),
+      packageSize: normalizePackageSize(p.packageSize)
+    };
   });
+
+  // Después agrupamos el mismo producto y sumamos Anaquel + Refrigerador + cualquier
+  // otra ubicación. El requerido se toma una sola vez (el valor mayor configurado).
+  const grouped = new Map();
+  locationCounts.forEach(item => {
+    if (!grouped.has(item.groupKey)) {
+      grouped.set(item.groupKey, {
+        productId: item.productId,
+        groupKey: item.groupKey,
+        groupId: item.groupId,
+        name: item.name,
+        imageUrl: item.imageUrl,
+        imageDataUrl: item.imageDataUrl,
+        imageOfflineUrl: item.imageOfflineUrl,
+        required: 0,
+        requiredWeekday: 0,
+        requiredSaturday: null,
+        counted: 0,
+        changeQty: 0,
+        minMissing: 1,
+        packageSize: 1,
+        locationBreakdown: []
+      });
+    }
+
+    const total = grouped.get(item.groupKey);
+    total.required = Math.max(total.required, item.required);
+    total.requiredWeekday = Math.max(total.requiredWeekday, item.requiredWeekday);
+    if (item.requiredSaturday !== null) {
+      total.requiredSaturday = total.requiredSaturday === null
+        ? item.requiredSaturday
+        : Math.max(total.requiredSaturday, item.requiredSaturday);
+    }
+    total.counted += item.counted;
+    total.changeQty += item.changeQty;
+    total.minMissing = Math.max(total.minMissing, item.minMissing);
+    total.packageSize = Math.max(total.packageSize, item.packageSize);
+    total.locationBreakdown.push({
+      productId: item.productId,
+      location: item.location,
+      counted: item.counted,
+      changeQty: item.changeQty,
+      availableQty: item.availableQty
+    });
+
+    if (!total.imageUrl && item.imageUrl) total.imageUrl = item.imageUrl;
+    if (!total.imageDataUrl && item.imageDataUrl) total.imageDataUrl = item.imageDataUrl;
+    if (!total.imageOfflineUrl && item.imageOfflineUrl) total.imageOfflineUrl = item.imageOfflineUrl;
+  });
+
+  const counts = Array.from(grouped.values()).map(product => {
+    const availableQty = S.mode === 'pedidos'
+      ? product.counted + product.changeQty
+      : product.counted;
+    const missing = Math.max(0, product.required - availableQty);
+    const order = S.mode === 'pedidos'
+      ? calcOrderForPackage(missing, product.packageSize)
+      : { packages: missing, pieces: missing, packageSize: 1 };
+    const shouldRestock = S.mode === 'pedidos'
+      ? missing >= product.minMissing && (product.packageSize > 1 ? order.packages > 0 : missing > 0)
+      : missing >= product.minMissing;
+    const requiredSource = S.mode === 'pedidos'
+      ? (activePedidoRequiredMode() === 'saturday' && product.requiredSaturday !== null ? 'Sábado' : 'L-V')
+      : '';
+
+    return {
+      ...product,
+      availableQty,
+      missing,
+      requiredSource,
+      hasChange: product.changeQty > 0,
+      orderPackages: order.packages,
+      orderPieces: order.pieces,
+      shouldRestock
+    };
+  });
+
   return {
     id: S.currentSessionId || `sess_${S.mode}_${Date.now()}`,
     mode: S.mode,
@@ -2163,17 +2430,49 @@ function buildSession() {
     completedAt: Date.now(),
     pedidoReqMode: S.mode === 'pedidos' ? S.pedidoReqMode : null,
     pedidoReqApplied: S.mode === 'pedidos' ? activePedidoRequiredMode() : null,
-    counts
+    counts,
+    locationCounts
   };
 }
 
 /* ═══════════════════════════════════════════════════════════
    RESULTS
 ═══════════════════════════════════════════════════════════ */
+function locationBreakdownText(product) {
+  return (product?.locationBreakdown || [])
+    .map(item => `${normalizeLocation(item.location)}: ${item.counted}`)
+    .join(' · ');
+}
+
+function renderDailyCountScreen(items) {
+  if (!items || !items.length) return '';
+  const groups = new Map();
+  items.forEach(item => {
+    const location = normalizeLocation(item.location);
+    if (!groups.has(location)) groups.set(location, []);
+    groups.get(location).push(item);
+  });
+
+  let html = `<div class="results-section-title daily">🧾 Conteo del día</div>`;
+  groups.forEach((products, location) => {
+    html += `<div class="daily-count-group">
+      <div class="daily-count-location">📍 ${esc(location)}</div>`;
+    html += products.map(product => `
+      <div class="daily-count-row">
+        <div class="daily-count-name">${esc(product.name)}</div>
+        ${product.changeQty > 0 ? `<div class="daily-count-change">Cambio: ${product.changeQty}</div>` : ''}
+        <div class="daily-count-value">${product.counted} pz</div>
+      </div>`).join('');
+    html += `</div>`;
+  });
+  return html;
+}
+
 function renderResults() {
   nav('results');
   const m = S.missing;
   const changes = S.changesList || [];
+  const dailyCount = S.dailyCount || [];
   const sec = S.activeSection;
   const isPedidos = S.mode === 'pedidos';
   const hasReportItems = m.length > 0 || changes.length > 0;
@@ -2220,7 +2519,7 @@ function renderResults() {
                onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
           <div class="missing-info">
             <div class="missing-name">${esc(p.name)}</div>
-            <div class="missing-detail">Cambio/devolución: ${p.changeQty} pz &nbsp;·&nbsp; Hay: ${p.counted} &nbsp;·&nbsp; Disponible: ${p.availableQty} &nbsp;·&nbsp; Req: ${p.required}${p.requiredSource ? ` (${p.requiredSource})` : ''}</div>
+            <div class="missing-detail">Cambio/devolución: ${p.changeQty} pz &nbsp;·&nbsp; Hay: ${p.counted} &nbsp;·&nbsp; Disponible: ${p.availableQty} &nbsp;·&nbsp; Req: ${p.required}${p.requiredSource ? ` (${p.requiredSource})` : ''}${locationBreakdownText(p) ? `<br>Ubicaciones: ${esc(locationBreakdownText(p))}` : ''}</div>
           </div>
           <div class="missing-qty change" title="pz">${p.changeQty}<span style="font-size:.58rem;margin-left:2px">pz</span></div>
         </div>`).join('');
@@ -2245,7 +2544,7 @@ function renderResults() {
                onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 58 58%22><rect width=%2258%22 height=%2258%22 fill=%22%23f1f5f9%22 rx=%228%22/><text x=%2229%22 y=%2237%22 text-anchor=%22middle%22 fill=%22%23cbd5e1%22 font-size=%2224%22>📦</text></svg>'">
           <div class="missing-info">
             <div class="missing-name">${esc(p.name)}</div>
-            <div class="missing-detail">${availabilityText} &nbsp;·&nbsp; Req: ${p.required}${p.requiredSource ? ` (${p.requiredSource})` : ''} &nbsp;·&nbsp; Faltan: ${p.missing}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}${packageText}</div>
+            <div class="missing-detail">${availabilityText} &nbsp;·&nbsp; Req: ${p.required}${p.requiredSource ? ` (${p.requiredSource})` : ''} &nbsp;·&nbsp; Faltan: ${p.missing}${p.minMissing > 1 ? ` &nbsp;·&nbsp; Min: ${p.minMissing}` : ''}${packageText}${locationBreakdownText(p) ? `<br>Ubicaciones: ${esc(locationBreakdownText(p))}` : ''}</div>
           </div>
           <div class="missing-qty ${usePackages ? 'package' : ''}" title="${usePackages ? `${qtyMain} ${qtyLabel} de ${packageSize} pz cada uno` : qtyLabel}">${qtyMain}<span>${qtyLabel}</span></div>
         </div>`;
@@ -2253,6 +2552,10 @@ function renderResults() {
     }
 
     body.innerHTML = html;
+  }
+
+  if (isPedidos && dailyCount.length) {
+    body.insertAdjacentHTML('beforeend', renderDailyCountScreen(dailyCount));
   }
 
   // Actions
@@ -2269,6 +2572,7 @@ function renderResults() {
       </div>`;
   } else {
     actions.innerHTML = `
+      ${isPedidos ? `<div class="row-btns"><button class="btn btn-blue" onclick="makePDF()">📄 PDF con conteo</button></div>` : ''}
       <div class="row-btns">
         <button class="btn btn-blue" onclick="returnToCount()">← Corregir conteo</button>
         <button class="btn btn-ghost" onclick="renderHome()">🏠 Inicio</button>
@@ -2300,11 +2604,12 @@ async function makePDF() {
 
   const m = S.missing;
   const changes = S.changesList || [];
+  const dailyCount = S.dailyCount || [];
   const sec = S.activeSection;
   const isPedidos = S.mode === 'pedidos';
   const totalItems = isPedidos ? (m.length + changes.length) : m.length;
   const reportTitle = isPedidos ? 'Pedido a Proveedor' : 'Productos Faltantes';
-  const badgeText = isPedidos ? 'Cambios y productos solicitados' : 'Productos a surtir';
+  const badgeText = isPedidos ? 'Cambios, pedido y conteo del día' : 'Productos a surtir';
   const headerBg = isPedidos ? '#b45309' : '#1e293b';
   const accentBg = isPedidos ? '#fffbeb' : '#fef2f2';
   const accentBorder = isPedidos ? '#fde68a' : '#fecaca';
@@ -2385,9 +2690,31 @@ async function makePDF() {
     }).join('');
   }
 
-  const rows = changeRows() + orderRows();
+  function dailyCountRows() {
+    if (!isPedidos || !dailyCount.length) return '';
+    const groups = new Map();
+    dailyCount.forEach(item => {
+      const location = normalizeLocation(item.location);
+      if (!groups.has(location)) groups.set(location, []);
+      groups.get(location).push(item);
+    });
+
+    let html = `<div class="section-title daily">🧾 Conteo del día</div>`;
+    groups.forEach((products, location) => {
+      html += `<div class="location-title">📍 ${esc(location)}</div>`;
+      html += `<div class="daily-table">` + products.map(product => `
+        <div class="daily-row">
+          <span class="daily-name">${esc(product.name)}</span>
+          ${product.changeQty > 0 ? `<span class="daily-change">Cambio: ${product.changeQty}</span>` : ''}
+          <strong>${product.counted} pz</strong>
+        </div>`).join('') + `</div>`;
+    });
+    return html;
+  }
+
+  const rows = changeRows() + orderRows() + dailyCountRows();
   const summaryText = isPedidos
-    ? `${changes.length} cambio(s) · ${m.length} producto(s) solicitado(s)`
+    ? `${changes.length} cambio(s) · ${m.length} producto(s) solicitado(s) · ${dailyCount.length} captura(s)`
     : `${m.length} producto(s)`;
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
@@ -2411,9 +2738,10 @@ async function makePDF() {
     .pill{display:inline-flex;align-items:center;gap:6px;width:max-content;max-width:100%;padding:5px 10px;border-radius:999px;background:${accentBg};color:${accentText};border:1px solid ${accentBorder};font-size:12px;font-weight:900}
     .total{font-size:11px;color:#64748b;text-align:right}
 
-    .section-title{font-size:13px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin:9px 0 6px;padding:6px 9px;border-radius:9px;background:#f8fafc;border:1px solid #e2e8f0;color:#334155;break-after:avoid;page-break-after:avoid}
-    .section-title.change{background:#fef2f2;border-color:#fecaca;color:#991b1b}
-    .section-title.order{background:#fffbeb;border-color:#fde68a;color:#92400e}
+    .section-title{font-size:18px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;margin:17px 0 8px;padding:11px 13px;border-radius:10px;background:#f8fafc;border:2px solid #cbd5e1;color:#334155;break-after:avoid;page-break-after:avoid}
+    .section-title.change{background:#fee2e2;border-color:#ef4444;color:#7f1d1d}
+    .section-title.order{background:#fef3c7;border-color:#f59e0b;color:#78350f}
+    .section-title.daily{background:#dbeafe;border-color:#3b82f6;color:#1e3a8a}
 
     .item-card{border:1px solid #dbe4ef;border-radius:12px;padding:8px 9px;margin-bottom:6px;background:#fff;break-inside:avoid;page-break-inside:avoid;box-shadow:0 1px 2px rgba(15,23,42,.05)}
     .item-card.change-card{border-color:#fecaca;background:#fef2f2}
@@ -2441,6 +2769,14 @@ async function makePDF() {
     .package-note{margin-top:7px;font-size:11.5px;line-height:1.25;color:#92400e;background:#fffbeb;border:1.5px solid #f59e0b;border-radius:9px;padding:6px 8px;font-weight:700}
     .package-note strong{display:block;font-size:12px;letter-spacing:.05em;color:#78350f;margin-bottom:2px}
     .package-note span{display:block;color:#92400e;font-weight:700}
+
+    .location-title{margin:9px 0 5px;padding:7px 9px;background:#eff6ff;color:#1d4ed8;border-left:4px solid #2563eb;font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;break-after:avoid;page-break-after:avoid}
+    .daily-table{border:1px solid #dbe4ef;border-radius:9px;overflow:hidden;margin-bottom:9px;break-inside:auto}
+    .daily-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-top:1px solid #e2e8f0;font-size:12px;break-inside:avoid;page-break-inside:avoid}
+    .daily-row:first-child{border-top:0}
+    .daily-name{flex:1;min-width:0;font-weight:700}
+    .daily-row strong{font-size:14px;white-space:nowrap}
+    .daily-change{font-size:10.5px;color:#991b1b;font-weight:800;white-space:nowrap}
 
     .foot{margin-top:8px;font-size:10.5px;line-height:1.3;color:#94a3b8;text-align:center}
 
@@ -2638,6 +2974,8 @@ function normalizeCatalogSections(sections) {
   return (sections || []).map((sec, secIdx) => ({
     ...sec,
     id: sec.id || `sec_${String(sec.name || 'seccion').replace(/\W+/g, '_')}_${secIdx}_${Date.now()}`,
+    scheduleConfigured: sec.scheduleConfigured === true,
+    orderDays: normalizeOrderDays(sec.orderDays ?? sec.days ?? sec.diasPedido ?? []),
     products: (sec.products || []).map((p, prodIdx) => {
       const requiredWeekday = Number(
         p.requiredWeekday ??
@@ -2664,6 +3002,8 @@ function normalizeCatalogSections(sections) {
         imageUrl: p.imageUrl || p.image || p.img || p.foto || p.urlImagen || '',
         imageDataUrl: p.imageDataUrl || p.imageBase64 || p.base64Image || '',
         imageOfflineUrl: p.imageOfflineUrl || p.imageDataUrl || p.imageBase64 || p.base64Image || '',
+        location: String(p.location ?? p.ubicacion ?? p.zone ?? p.zona ?? '').trim(),
+        groupId: String(p.groupId ?? p.groupKey ?? p.productGroup ?? p.idAgrupacion ?? '').trim(),
         packageSize: normalizePackageSize(
           p.packageSize ??
           p.packSize ??
