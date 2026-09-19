@@ -43,3 +43,9 @@ También se aceptan `Sí`, `X`, `1`, `true` o casillas de verificación activada
 
 - `appsscript.json`: permisos y configuración del Web App.
 - `SyncEndpoint.gs`: lectura del catálogo, calendario y proxy de imágenes.
+
+## Sincronización de imágenes
+
+La aplicación descarga el catálogo con `includeImages=0` para que la sincronización y la prueba de conexión sean rápidas. Después guarda las imágenes de forma individual mediante el proxy `mode=image`, con progreso y fallos independientes.
+
+El parámetro `includeImages=1` se conserva para pruebas manuales o diagnósticos, pero no se recomienda para catálogos completos porque genera respuestas muy grandes y puede superar el tiempo de espera del navegador.

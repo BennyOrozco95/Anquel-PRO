@@ -667,7 +667,7 @@
      MODE SELECTOR (first screen)
 ══════════════════════════════════════════════════════ -->
 <div class="screen off" id="screen-mode">
-  <div class="app-version" id="app-version">Ver. 1.1.0.0</div>
+  <div class="app-version" id="app-version">Ver. 1.0.0.8</div>
   <div class="mode-header fade-up">
     <div class="app-logo">🏪</div>
     <h1>Gestión de Tienda</h1>
@@ -921,7 +921,7 @@ async function dbClear(store) {
 /* ═══════════════════════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════════════════════ */
-const APP_VERSION = '1.1.0.0';
+const APP_VERSION = '1.0.0.8';
 const DEFAULT_WEBAPP_URLS = {
   anaqueles:  'https://script.google.com/macros/s/AKfycbxSjmd4JFGRHSWtdsEYZbip298KWEtduVfqdpfGee5c2cPK5-mEnAkaeFWGsZvR9RcE/exec',
   pedidos:    'https://script.google.com/macros/s/AKfycbz6ymKwn4okx0kcaZjXa1mV9oT4JmtR64YbUSPLJQ-5_X6-sfyWKPwoEJsT9SYC-j7KKQ/exec',
@@ -962,6 +962,7 @@ const S = {
   missing: [],
   changesList: [],
   dailyCount: [],
+  imageCacheStats: null,
   currentSessionId: null
 };
 
@@ -1324,54 +1325,106 @@ function cancelImport() {
    GOOGLE SHEETS SYNC
 ═══════════════════════════════════════════════════════════ */
 
+async function fetchWithTimeout(resource, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(resource, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`Tiempo de espera agotado (${Math.round(timeoutMs / 1000)} s)`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Called by the Sync button on the home screen */
 async function syncFromSheets() {
   if (!S.config.webAppUrl) { toast('⚙️ Configura la URL primero', 2500); return; }
 
   const btn = document.getElementById('btn-sync-home');
   if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
-  showVeil('Sincronizando con Google Sheets…');
+  showVeil('Sincronizando catálogo con Google Sheets…');
+  S.imageCacheStats = null;
 
   try {
-    const sections = await fetchSectionsFromSheets(S.config.webAppUrl);
-    // Stamp mode on each section and cache product images for offline use.
-    const stamped = await cacheCatalogImages(
-      sections.map(s => ({ ...s, mode: S.mode })),
-      { showProgress: true }
-    );
+    // El catálogo se descarga sin base64: así la respuesta es pequeña y rápida.
+    const sections = await fetchSectionsFromSheets(S.config.webAppUrl, {
+      includeImages: false,
+      timeoutMs: 30000
+    });
+    const baseStamped = sections.map(s => ({ ...s, mode: S.mode }));
 
-    // Only replace sections belonging to current mode
+    // Guardamos primero los datos. Un problema con una imagen nunca invalida el catálogo.
     await dbDelByMode('sections', S.mode);
-    for (const sec of stamped) await dbPut('sections', sec);
-    S.sections = stamped;
+    for (const sec of baseStamped) await dbPut('sections', sec);
+    S.sections = baseStamped;
 
     S.config.lastSynced = Date.now();
-    await dbPut('config', { key: `${S.mode}_webAppUrl`,  value: S.config.webAppUrl });
+    await dbPut('config', { key: `${S.mode}_webAppUrl`, value: S.config.webAppUrl });
     await dbPut('config', { key: `${S.mode}_lastSynced`, value: S.config.lastSynced });
 
+    let stamped = baseStamped;
+    try {
+      stamped = await cacheCatalogImages(baseStamped, {
+        showProgress: true,
+        concurrency: 3
+      });
+      await dbDelByMode('sections', S.mode);
+      for (const sec of stamped) await dbPut('sections', sec);
+      S.sections = stamped;
+    } catch (imageErr) {
+      console.warn('El catálogo se guardó, pero el caché de imágenes no terminó:', imageErr);
+    }
+
     hideVeil();
-    toast(`✓ ${stamped.length} secciones sincronizadas`, 3000);
+    const stats = S.imageCacheStats;
+    const imageSummary = stats?.total
+      ? ` · ${stats.cached}/${stats.total} imágenes offline`
+      : '';
+    toast(`✓ ${stamped.length} secciones sincronizadas${imageSummary}`, 4000);
     renderHome();
   } catch (err) {
     hideVeil();
-    toast('❌ Error: ' + err.message, 4000);
+    toast('❌ Error al sincronizar: ' + err.message, 5000);
   } finally {
     if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
   }
 }
 
 /** Fetch + parse JSON from the Apps Script Web App URL */
-async function fetchSectionsFromSheets(url) {
-  // Append a timestamp so Google's CDN and the service worker
-  // always treat this as a brand-new request — never a cached one.
-  const bustUrl = url
-    + (url.includes('?') ? '&' : '?')
-    + 'includeImages=1&_t=' + Date.now();
+async function fetchSectionsFromSheets(url, opts = {}) {
+  const includeImages = opts.includeImages === true;
+  const timeoutMs = Number(opts.timeoutMs) > 0
+    ? Number(opts.timeoutMs)
+    : (includeImages ? 120000 : 30000);
 
-  const resp = await fetch(bustUrl, {
-    redirect: 'follow',
-    cache: 'no-store'   // bypass browser / service-worker cache
-  });
+  let endpoint;
+  try {
+    endpoint = new URL(String(url || '').trim());
+  } catch (_) {
+    throw new Error('La URL del Web App no es válida');
+  }
+
+  endpoint.searchParams.set('includeImages', includeImages ? '1' : '0');
+  endpoint.searchParams.set('_t', String(Date.now()));
+
+  let resp;
+  try {
+    resp = await fetchWithTimeout(endpoint.toString(), {
+      redirect: 'follow',
+      cache: 'no-store'
+    }, timeoutMs);
+  } catch (err) {
+    if (String(err?.message || '').includes('Tiempo de espera agotado')) {
+      throw new Error('El servidor tardó demasiado. Intenta nuevamente.');
+    }
+    throw err;
+  }
+
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const data = await resp.json();
   if (!data.ok) throw new Error(data.error || 'Respuesta inválida del servidor');
@@ -1413,7 +1466,7 @@ async function testConnection() {
   setUrlStatus('none', '⟳ Probando…');
   document.getElementById('btn-test-url').disabled = true;
   try {
-    const sections = await fetchSectionsFromSheets(url);
+    const sections = await fetchSectionsFromSheets(url, { includeImages: false, timeoutMs: 30000 });
     setUrlStatus('ok', `✓ ${sections.length} secciones encontradas`);
   } catch (err) {
     setUrlStatus('error', '❌ ' + err.message);
@@ -1702,7 +1755,8 @@ function uniqueImageUrlsFromSections(sections) {
   (sections || []).forEach(sec => {
     (sec.products || []).forEach(p => {
       const url = String(p.imageUrl || '').trim();
-      if (!url || url.startsWith('data:') || seen.has(url)) return;
+      const embedded = p.imageOfflineUrl || p.imageDataUrl || (isDataUrl(url) ? url : '');
+      if (!url || embedded || url.startsWith('data:') || seen.has(url)) return;
       seen.add(url);
       urls.push(url);
     });
@@ -1756,11 +1810,11 @@ async function cacheImageForOffline(url) {
 
   // 1) Intento directo. Solo funciona si el servidor de la imagen permite CORS.
   try {
-    const resp = await fetch(cleanUrl, {
+    const resp = await fetchWithTimeout(cleanUrl, {
       cache: 'no-store',
       credentials: 'omit',
       mode: 'cors'
-    });
+    }, 12000);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
     let blob = await resp.blob();
@@ -1804,10 +1858,10 @@ async function cacheImageViaSyncEndpoint(url) {
     + 'mode=image&url=' + encodeURIComponent(url)
     + '&_t=' + Date.now();
 
-  const resp = await fetch(proxyUrl, {
+  const resp = await fetchWithTimeout(proxyUrl, {
     redirect: 'follow',
     cache: 'no-store'
-  });
+  }, 30000);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
   const data = await resp.json();
@@ -1831,7 +1885,7 @@ async function cacheOpaqueImageForOffline(url) {
     const cached = await cache.match(req, { ignoreVary: true }) || await cache.match(url, { ignoreVary: true });
     if (cached) return true;
 
-    const resp = await fetch(req);
+    const resp = await fetchWithTimeout(req, {}, 15000);
     await cache.put(req, resp.clone());
     return true;
   } catch (err) {
@@ -1870,20 +1924,56 @@ async function hydrateCatalogImages(sections) {
 async function cacheCatalogImages(sections, opts = {}) {
   const urls = uniqueImageUrlsFromSections(sections);
   const cachedByUrl = new Map();
+  const concurrency = Math.max(1, Math.min(6, Number(opts.concurrency) || 3));
+  let cursor = 0;
   let done = 0;
+  let cachedCount = 0;
+  let failedCount = 0;
+
+  S.imageCacheStats = {
+    total: urls.length,
+    cached: 0,
+    failed: 0
+  };
 
   if (opts.showProgress && urls.length) {
     showVeil(`Guardando imágenes para uso offline… 0/${urls.length}`);
   }
 
-  for (const url of urls) {
-    const dataUrl = await cacheImageForOffline(url);
-    if (dataUrl) cachedByUrl.set(url, dataUrl);
-    done += 1;
-    if (opts.showProgress && urls.length) {
-      showVeil(`Guardando imágenes para uso offline… ${done}/${urls.length}`);
+  async function worker() {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= urls.length) return;
+
+      const url = urls[index];
+      try {
+        const dataUrl = await cacheImageForOffline(url);
+        if (dataUrl) {
+          cachedByUrl.set(url, dataUrl);
+          cachedCount += 1;
+        } else {
+          failedCount += 1;
+        }
+      } catch (err) {
+        failedCount += 1;
+        console.warn('No se pudo guardar la imagen para uso offline:', url, err);
+      } finally {
+        done += 1;
+        S.imageCacheStats = {
+          total: urls.length,
+          cached: cachedCount,
+          failed: failedCount
+        };
+        if (opts.showProgress && urls.length) {
+          showVeil(`Guardando imágenes para uso offline… ${done}/${urls.length}`);
+        }
+      }
     }
   }
+
+  const workerCount = Math.min(concurrency, urls.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   return (sections || []).map(sec => ({
     ...sec,

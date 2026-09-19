@@ -1,4 +1,4 @@
-const APP_VERSION = '1.1.0.0';
+const APP_VERSION = '1.0.0.8';
 const APP_CACHE = `anaqueles-pro-app-${APP_VERSION}`;
 const IMAGE_CACHE = 'anaqueles-pro-product-images';
 
@@ -22,8 +22,10 @@ self.addEventListener('activate', event => {
     const keys = await caches.keys();
 
     await Promise.all(keys.map(key => {
-      const keep = key === APP_CACHE || key === IMAGE_CACHE;
-      return keep ? null : caches.delete(key);
+      if (key.startsWith('anaqueles-pro-app-') && key !== APP_CACHE) {
+        return caches.delete(key);
+      }
+      return null;
     }));
 
     await self.clients.claim();
@@ -76,9 +78,9 @@ async function staleWhileRevalidate(request) {
   const cached = await cache.match(request, { ignoreVary: true });
 
   const fresh = fetch(request)
-    .then(response => {
+    .then(async response => {
       try {
-        cache.put(request, response.clone());
+        await cache.put(request, response.clone());
       } catch (_) {}
 
       return response;
@@ -88,10 +90,21 @@ async function staleWhileRevalidate(request) {
   return cached || fresh;
 }
 
+function isDynamicAppsScriptRequest(request) {
+  const hostname = new URL(request.url).hostname;
+  return hostname === 'script.google.com' || hostname === 'script.googleusercontent.com';
+}
+
 self.addEventListener('fetch', event => {
   const request = event.request;
 
   if (request.method !== 'GET') return;
+
+  // Las respuestas del Web App siempre deben venir de la red y nunca del caché de la PWA.
+  if (isDynamicAppsScriptRequest(request)) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   if (request.destination === 'image') {
     event.respondWith(cacheFirstImage(request));
